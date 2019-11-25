@@ -117,7 +117,15 @@ def main(args):
 
         # Log to TensorBoard
         tbx = SummaryWriter(args.save_dir)
-        util.visualize(tbx,
+
+        # Modified by Lizuoyan...
+        # util.visualize(tbx,
+        #                pred_dict=pred_dict,
+        #                eval_path=eval_file,
+        #                step=0,
+        #                split=args.split,
+        #                num_visuals=args.num_visuals)
+        util.visualize_error(tbx,
                        pred_dict=pred_dict,
                        eval_path=eval_file,
                        step=0,

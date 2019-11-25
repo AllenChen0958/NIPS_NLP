@@ -41,6 +41,7 @@ class SQuAD(data.Dataset):
         data_path (str): Path to .npz file containing pre-processed dataset.
         use_v2 (bool): Whether to use SQuAD 2.0 questions. Otherwise only use SQuAD 1.1.
     """
+
     def __init__(self, data_path, use_v2=True):
         super(SQuAD, self).__init__()
 
@@ -104,6 +105,7 @@ def collate_fn(examples):
     Adapted from:
         https://github.com/yunjey/seq2seq-dataloader
     """
+
     def merge_0d(scalars, dtype=torch.int64):
         return torch.tensor(scalars, dtype=dtype)
 
@@ -126,8 +128,8 @@ def collate_fn(examples):
 
     # Group by tensor type
     context_idxs, context_char_idxs, \
-        question_idxs, question_char_idxs, \
-        y1s, y2s, ids = zip(*examples)
+    question_idxs, question_char_idxs, \
+    y1s, y2s, ids = zip(*examples)
 
     # Merge into batch tensors
     context_idxs = merge_1d(context_idxs)
@@ -149,6 +151,7 @@ class AverageMeter:
     Adapted from:
         > https://github.com/pytorch/examples/blob/master/imagenet/main.py
     """
+
     def __init__(self):
         self.avg = 0
         self.sum = 0
@@ -177,6 +180,7 @@ class EMA:
         model (torch.nn.Module): Model with parameters whose EMA will be kept.
         decay (float): Decay rate for exponential moving average.
     """
+
     def __init__(self, model, decay):
         self.decay = decay
         self.shadow = {}
@@ -237,6 +241,7 @@ class CheckpointSaver:
             minimizes the metric.
         log (logging.Logger): Optional logger for printing information.
     """
+
     def __init__(self, save_dir, max_checkpoints, metric_name,
                  maximize_metric=False, log=None):
         super(CheckpointSaver, self).__init__()
@@ -418,9 +423,48 @@ def visualize(tbx, pred_dict, eval_path, step, split, num_visuals):
                    + f'- **Context:** {context}\n'
                    + f'- **Answer:** {gold}\n'
                    + f'- **Prediction:** {pred}')
-        tbx.add_text(tag=f'{split}/{i+1}_of_{num_visuals}',
+        tbx.add_text(tag=f'{split}/{i + 1}_of_{num_visuals}',
                      text_string=tbl_fmt,
                      global_step=step)
+
+# Modified by Lizuoyan...
+def visualize_error(tbx, pred_dict, eval_path, step, split, num_visuals=100000000):
+    """Visualize text examples to TensorBoard.
+
+    Args:
+        tbx (tensorboardX.SummaryWriter): Summary writer.
+        pred_dict (dict): dict of predictions of the form id -> pred.
+        eval_path (str): Path to eval JSON file.
+        step (int): Number of examples seen so far during training.
+        split (str): Name of data split being visualized.
+        num_visuals (int): Number of visuals to select at random from preds.
+    """
+    if num_visuals <= 0:
+        return
+    if num_visuals > len(pred_dict):
+        num_visuals = len(pred_dict)
+
+    visual_ids = np.random.choice(list(pred_dict), size=num_visuals, replace=False)
+
+    with open(eval_path, 'r') as eval_file:
+        eval_dict = json.load(eval_file)
+    for i, id_ in enumerate(visual_ids):
+        pred = pred_dict[id_] or 'N/A'
+        example = eval_dict[str(id_)]
+        question = example['question']
+        context = example['context']
+        answers = example['answers']
+
+        gold = answers[0] if answers else 'N/A'
+        tbl_fmt = (f'- **Question:** {question}\n'
+                   + f'- **Context:** {context}\n'
+                   + f'- **Answer:** {gold}\n'
+                   + f'- **Prediction:** {pred}')
+
+        if answers != pred:
+            tbx.add_text(tag=f'{split}/{i + 1}_of_{num_visuals}',
+                         text_string=tbl_fmt,
+                         global_step=step)
 
 
 def save_preds(preds, save_dir, file_name='predictions.csv'):
@@ -485,12 +529,14 @@ def get_logger(log_dir, name):
     Returns:
         logger (logging.Logger): Logger instance for logging events.
     """
+
     class StreamHandlerWithTQDM(logging.Handler):
         """Let `logging` print without breaking `tqdm` progress bars.
 
         See Also:
             > https://stackoverflow.com/questions/38543506
         """
+
         def emit(self, record):
             try:
                 msg = self.format(record)
