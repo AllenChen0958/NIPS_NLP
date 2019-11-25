@@ -427,10 +427,19 @@ def visualize(tbx, pred_dict, eval_path, step, split, num_visuals):
                      text_string=tbl_fmt,
                      global_step=step)
 
-# Modified by Lizuoyan...
-def visualize_error(tbx, pred_dict, eval_path, step, split, num_visuals=100000000):
-    """Visualize text examples to TensorBoard.
 
+# example = {"context_tokens": context_tokens,
+#                                "context_chars": context_chars,
+#                                "ques_tokens": ques_tokens,
+#                                "ques_chars": ques_chars,
+#                                "y1s": y1s,
+#                                "y2s": y2s,
+#                                "id": total}
+
+# Modified by Li Zuoyan
+def visualize_error(tbx, pred_dict, eval_path, step, split, num_visuals=100000000,
+                    vs_error_mode=0, Y1=None, Y2=None, P1=None, P2=None):
+    """Visualize text examples to TensorBoard.
     Args:
         tbx (tensorboardX.SummaryWriter): Summary writer.
         pred_dict (dict): dict of predictions of the form id -> pred.
@@ -438,6 +447,13 @@ def visualize_error(tbx, pred_dict, eval_path, step, split, num_visuals=10000000
         step (int): Number of examples seen so far during training.
         split (str): Name of data split being visualized.
         num_visuals (int): Number of visuals to select at random from preds.
+
+        Created by Li zuoyan
+        vs_error_mod (int):
+        0 for all errors,
+        1 for index of all answers and predicts,
+        2 for the length of prediction is shorter than answer for first errors,
+        3 for the length of prediction is longer than answer for first errors.
     """
     if num_visuals <= 0:
         return
@@ -454,17 +470,57 @@ def visualize_error(tbx, pred_dict, eval_path, step, split, num_visuals=10000000
         question = example['question']
         context = example['context']
         answers = example['answers']
+        y1 = Y1[str(id_)]
+        y2 = Y2[str(id_)]
+        p1 = P1[str(id_)]
+        p2 = P2[str(id_)]
 
         gold = answers[0] if answers else 'N/A'
-        tbl_fmt = (f'- **Question:** {question}\n'
-                   + f'- **Context:** {context}\n'
-                   + f'- **Answer:** {gold}\n'
-                   + f'- **Prediction:** {pred}')
 
-        if answers != pred:
-            tbx.add_text(tag=f'{split}/{i + 1}_of_{num_visuals}',
-                         text_string=tbl_fmt,
-                         global_step=step)
+        if vs_error_mode == 0:
+            if gold != pred:
+                tbl_fmt = (f'- **Question:** {question}\n'
+                           + f'- **Context:** {context}\n'
+                           + f'- **Answer:** {gold}\n'
+                           + f'- **Prediction:** {pred}')
+
+                tbx.add_text(tag=f'{split}/{i + 1}_of_{num_visuals}',
+                             text_string=tbl_fmt,
+                             global_step=step)
+        elif vs_error_mode == 1:
+            if gold != pred:
+                tbl_fmt = (f'- **Question:** {question}\n'
+                           + f'- **Context:** {context}\n'
+                           + f'- **Answer:** {gold}\n'
+                           + f'- **Prediction:** {pred}\n'
+                           + f'- **IndexAns:** {(y1, y2)}\n'
+                           + f'- **IndexPre:** {(p1, p2)}')
+
+                tbx.add_text(tag=f'{split}/{i + 1}_of_{num_visuals}',
+                             text_string=tbl_fmt,
+                             global_step=step)
+        elif vs_error_mode == 2:
+            # shorter length of prediction than Answer
+            if gold != pred and pred in gold:
+                tbl_fmt = (f'- **Question:** {question}\n'
+                           + f'- **Context:** {context}\n'
+                           + f'- **Answer:** {gold}\n'
+                           + f'- **Prediction:** {pred}')
+
+                tbx.add_text(tag=f'{split}/{i + 1}_of_{num_visuals}',
+                             text_string=tbl_fmt,
+                             global_step=step)
+        elif vs_error_mode == 3:
+            if gold != pred and gold in pred:
+                tbl_fmt = (f'- **Question:** {question}\n'
+                           + f'- **Context:** {context}\n'
+                           + f'- **Answer:** {gold}\n'
+                           + f'- **Prediction:** {pred}')
+
+                tbx.add_text(tag=f'{split}/{i + 1}_of_{num_visuals}',
+                             text_string=tbl_fmt,
+                             global_step=step)
+            pass
 
 
 def save_preds(preds, save_dir, file_name='predictions.csv'):
@@ -654,7 +710,9 @@ def discretize(p_start, p_end, max_len=15, no_answer=False):
     return start_idxs, end_idxs
 
 
-def convert_tokens(eval_dict, qa_id, y_start_list, y_end_list, no_answer):
+# def convert_tokens(eval_dict, qa_id, y_start_list, y_end_list, no_answer):
+# Modified to get indexs of predictions.  Li Zuoyan
+def convert_tokens(eval_dict, qa_id, y_start_list, y_end_list, no_answer, starts=None, ends=None):
     """Convert predictions to tokens from the context.
 
     Args:
@@ -669,6 +727,10 @@ def convert_tokens(eval_dict, qa_id, y_start_list, y_end_list, no_answer):
         pred_dict (dict): Dictionary index IDs -> predicted answer text.
         sub_dict (dict): Dictionary UUIDs -> predicted answer text (submission).
     """
+    if starts is None:
+        starts = {}
+    if ends is None:
+        ends = {}
     pred_dict = {}
     sub_dict = {}
     for qid, y_start, y_end in zip(qa_id, y_start_list, y_end_list):
@@ -678,13 +740,21 @@ def convert_tokens(eval_dict, qa_id, y_start_list, y_end_list, no_answer):
         if no_answer and (y_start == 0 or y_end == 0):
             pred_dict[str(qid)] = ''
             sub_dict[uuid] = ''
+            # Modified
+            starts[str(qid)] = -1
+            ends[str(qid)] = -1
+            # end modified
         else:
             if no_answer:
                 y_start, y_end = y_start - 1, y_end - 1
             start_idx = spans[y_start][0]
             end_idx = spans[y_end][1]
-            pred_dict[str(qid)] = context[start_idx: end_idx]
+            pred_dict[str(qid)] = context[start_idx: end_idx]  # get a string of pre within a dictionary. LZY
             sub_dict[uuid] = context[start_idx: end_idx]
+            # Modified
+            starts[str(qid)] = start_idx
+            ends[str(qid)] = end_idx
+            # end modified
     return pred_dict, sub_dict
 
 
