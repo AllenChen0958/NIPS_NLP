@@ -34,6 +34,7 @@ def main(args):
     args.batch_size *= max(1, len(args.gpu_ids))
 
     # Set random seed
+    # To make the data generation of every experiment same
     log.info(f'Using random seed {args.seed}...')
     random.seed(args.seed)
     np.random.seed(args.seed)
@@ -123,7 +124,8 @@ def main(args):
 
                 # Backward
                 loss.backward()
-                nn.utils.clip_grad_norm_(model.parameters(), args.max_grad_norm)
+                nn.utils.clip_grad_norm_(
+                    model.parameters(), args.max_grad_norm)
                 optimizer.step()
                 scheduler.step(step // batch_size)
                 ema(model, step // batch_size)
@@ -153,7 +155,8 @@ def main(args):
                     ema.resume(model)
 
                     # Log to console
-                    results_str = ', '.join(f'{k}: {v:05.2f}' for k, v in results.items())
+                    results_str = ', '.join(
+                        f'{k}: {v:05.2f}' for k, v in results.items())
                     log.info(f'Dev {results_str}')
 
                     # Log to TensorBoard
