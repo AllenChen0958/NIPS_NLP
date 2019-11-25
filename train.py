@@ -72,6 +72,13 @@ def main(args):
     scheduler = sched.LambdaLR(optimizer, lambda s: 1.)  # Constant LR
 
     # Get data loader
+    # (context_idxs(context_len,): Indices of the words in the context.,
+    # context_char_idx(context_len, max_word_len): Indices of the characters in the context,
+    # question_idxs(question_len,): Indices of the words in the question,
+    # question_char_idx(question_len, max_word_len): Indices of the characters in the question,
+    # y1:start, -1 if no answer: answer start index,
+    # y2:start, -1 if no answer: answer end index,
+    # id ID of the example)
     log.info('Building dataset...')
     train_dataset = SQuAD(args.train_record_file, args.use_squad_v2)
     train_loader = data.DataLoader(train_dataset,
@@ -97,14 +104,20 @@ def main(args):
                 tqdm(total=len(train_loader.dataset)) as progress_bar:
             for cw_idxs, cc_idxs, qw_idxs, qc_idxs, y1, y2, ids in train_loader:
                 # Setup for forward
+                # cw_idxs: Indices of the words in the context
+                # cc_idxs: Indices of the characters in the context
+                # qw_idxs: Indices of the words in the query
+                # qc_idxs: Indices of the characters in teh query
                 cw_idxs = cw_idxs.to(device)
                 qw_idxs = qw_idxs.to(device)
+                # cw_idx with shape(context_len, )
                 batch_size = cw_idxs.size(0)
                 optimizer.zero_grad()
 
                 # Forward
                 log_p1, log_p2 = model(cw_idxs, qw_idxs)
                 y1, y2 = y1.to(device), y2.to(device)
+                # L(theta) = - 1/N * sum(log(P1_yi_1) + log(P2_yi_2))
                 loss = F.nll_loss(log_p1, y1) + F.nll_loss(log_p2, y2)
                 loss_val = loss.item()
 

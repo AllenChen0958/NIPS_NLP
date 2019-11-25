@@ -18,6 +18,7 @@ class Embedding(nn.Module):
     Word-level embeddings are further refined using a 2-layer Highway Encoder
     (see `HighwayEncoder` class for details).
 
+    ###### there is no character-level embedding, but paper does.
     Args:
         word_vectors (torch.Tensor): Pre-trained word vectors.
         hidden_size (int): Size of hidden activations.

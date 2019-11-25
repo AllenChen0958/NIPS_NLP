@@ -52,8 +52,8 @@ class BiDAF(nn.Module):
                                       drop_prob=drop_prob)
 
     def forward(self, cw_idxs, qw_idxs):
-        c_mask = torch.zeros_like(cw_idxs) != cw_idxs
-        q_mask = torch.zeros_like(qw_idxs) != qw_idxs
+        c_mask = torch.zeros_like(cw_idxs) != cw_idxs       # Context
+        q_mask = torch.zeros_like(qw_idxs) != qw_idxs       # Query
         c_len, q_len = c_mask.sum(-1), q_mask.sum(-1)
 
         c_emb = self.emb(cw_idxs)         # (batch_size, c_len, hidden_size)
