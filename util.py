@@ -470,10 +470,17 @@ def visualize_error(tbx, pred_dict, eval_path, step, split, num_visuals=10000000
         question = example['question']
         context = example['context']
         answers = example['answers']
+<<<<<<< HEAD
         y1 = list(Y1.values())[id_]
         y2 = list(Y2.values())[id_]
         p1 = list(P1.values())[id_]
         p2 = list(P2.values())[id_]
+=======
+        y1 = Y1[id_]
+        y2 = Y2[id_]
+        p1 = P1[id_]
+        p2 = P2[id_]
+>>>>>>> c37cf773c526ccd01c792bdc2fa7628e819e4e18
 
         gold = answers[0] if answers else 'N/A'
 
