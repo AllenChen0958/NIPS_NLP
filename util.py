@@ -501,9 +501,7 @@ def visualize_error(tbx, pred_dict, eval_path, step, split, num_visuals=10000000
         return
     if num_visuals > len(pred_dict):
         num_visuals = len(pred_dict)
-
     visual_ids = np.random.choice(list(pred_dict), size=num_visuals, replace=False)
-
     with open(eval_path, 'r') as eval_file:
         eval_dict = json.load(eval_file)
     for i, id_ in enumerate(visual_ids):
@@ -512,61 +510,60 @@ def visualize_error(tbx, pred_dict, eval_path, step, split, num_visuals=10000000
         question = example['question']
         context = example['context']
         answers = example['answers']
-        # y1 = list(Y1.values())[id_]
-        # y2 = list(Y2.values())[id_]
-        # p1 = list(P1.values())[id_]
-        # p2 = list(P2.values())[id_]
-        # y1 = Y1[id_]
-        # y2 = Y2[id_]
-        # p1 = P1[id_]
-        # p2 = P2[id_]
-
+        y1s = Y1['tensor(%s)'%(str(id_))]
+        y2s = Y2['tensor(%s)'%(str(id_))]
+        p1 = P1[str(id_)]
+        p2 = P2[str(id_)]
         gold = answers[0] if answers else 'N/A'
-
-        if vs_error_mode == 0:
-            if gold != pred:
+        if int(vs_error_mode) == 0:
+            isAnswer = 0
+            for i, a_answer in enumerate(answers):
+                print(pred, a_answer)
+                isAnswer = compute_em(pred, a_answer)
+                if isAnswer == 1:
+                    break
+            if isAnswer == 0:
                 tbl_fmt = (f'- **Question:** {question}\n'
                            + f'- **Context:** {context}\n'
-                           + f'- **Answer:** {gold}\n'
+                           + f'- **Answer:** {answers}\n'
                            + f'- **Prediction:** {pred}')
 
                 tbx.add_text(tag=f'{split}/{i + 1}_of_{num_visuals}',
                              text_string=tbl_fmt,
                              global_step=step)
-        # elif vs_error_mode == 1:
-        #     if gold != pred:
-        #         tbl_fmt = (f'- **Question:** {question}\n'
-        #                    + f'- **Context:** {context}\n'
-        #                    + f'- **Answer:** {gold}\n'
-        #                    + f'- **Prediction:** {pred}\n'
-        #                    + f'- **IndexAns:** {(y1, y2)}\n'
-        #                    + f'- **IndexPre:** {(p1, p2)}')
-        #
-        #         tbx.add_text(tag=f'{split}/{i + 1}_of_{num_visuals}',
-        #                      text_string=tbl_fmt,
-        #                      global_step=step)
-        elif vs_error_mode == 2:
-            # shorter length of prediction than Answer
-            if gold != pred and find_lcseque(gold, pred) == 1:
+                
+        elif vs_error_mode == 1:
+            isAnswer = 0
+            for i, a_answer in enumerate(answers):
+                isAnswer = compute_em(pred, a_answer)
+                if isAnswer == 1:
+                    break
+            if isAnswer == 0 and gold != pred and pred != 'N/A':
+                start_Ans = 0.0
+                end_Ans = 0.0
+                avg_start = 0.0
+                avg_end = 0.0
+                if gold != 'N/A':
+                    i = 0
+                    for ch in y1s:
+                        i += 1
+                        start_Ans += ch
+                    for ch in y2s:
+                        end_Ans += ch
+                    start_Ans = start_Ans / float(i)
+                    end_Ans = end_Ans / float(i)
+                    avg_start = start_Ans - p1
+                    avg_end = end_Ans - p2                  
                 tbl_fmt = (f'- **Question:** {question}\n'
                            + f'- **Context:** {context}\n'
                            + f'- **Answer:** {gold}\n'
-                           + f'- **Prediction:** {pred}')
-
+                           + f'- **Prediction:** {pred}\n'
+                           + f'- **(start_shift, end_shift):** {(avg_start, avg_end)}\n'
+                           + f'- **(start_Ans, end_Ans):** {(start_Ans, end_Ans)}')
+        
                 tbx.add_text(tag=f'{split}/{i + 1}_of_{num_visuals}',
                              text_string=tbl_fmt,
                              global_step=step)
-        elif vs_error_mode == 3:
-            if gold != pred and find_lcseque(gold, pred) == 2:
-                tbl_fmt = (f'- **Question:** {question}\n'
-                           + f'- **Context:** {context}\n'
-                           + f'- **Answer:** {gold}\n'
-                           + f'- **Prediction:** {pred}')
-
-                tbx.add_text(tag=f'{split}/{i + 1}_of_{num_visuals}',
-                             text_string=tbl_fmt,
-                             global_step=step)
-            pass
 
 
 def save_preds(preds, save_dir, file_name='predictions.csv'):
