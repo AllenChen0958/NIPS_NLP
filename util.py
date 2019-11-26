@@ -428,6 +428,48 @@ def visualize(tbx, pred_dict, eval_path, step, split, num_visuals):
                      global_step=step)
 
 
+# Find common substring:
+def find_lcseque(s1, s2):
+    # 生成字符串长度加1的0矩阵，m用来保存对应位置匹配的结果
+    # s1: answer, s2: prediction
+    m = [[0 for x in range(len(s2) + 1)] for y in range(len(s1) + 1)]
+    # d用来记录转移方向
+    d = [[None for x in range(len(s2) + 1)] for y in range(len(s1) + 1)]
+
+    for p1 in range(len(s1)):
+        for p2 in range(len(s2)):
+            if s1[p1] == s2[p2]:  # 字符匹配成功，则该位置的值为左上方的值加1
+                m[p1 + 1][p2 + 1] = m[p1][p2] + 1
+                d[p1 + 1][p2 + 1] = 'ok'
+            elif m[p1 + 1][p2] > m[p1][p2 + 1]:  # 左值大于上值，则该位置的值为左值，并标记回溯时的方向
+                m[p1 + 1][p2 + 1] = m[p1 + 1][p2]
+                d[p1 + 1][p2 + 1] = 'left'
+            else:  # 上值大于左值，则该位置的值为上值，并标记方向up
+                m[p1 + 1][p2 + 1] = m[p1][p2 + 1]
+                d[p1 + 1][p2 + 1] = 'up'
+    (p1, p2) = (len(s1), len(s2))
+    s = []
+    while m[p1][p2]:  # 不为None时
+        c = d[p1][p2]
+        if c == 'ok':  # 匹配成功，插入该字符，并向左上角找下一个
+            s.append(s1[p1 - 1])
+            p1 -= 1
+            p2 -= 1
+        if c == 'left':  # 根据标记，向左找下一个
+            p2 -= 1
+        if c == 'up':  # 根据标记，向上找下一个
+            p1 -= 1
+    s.reverse()
+    if len(s) != 0:
+        if len(s1) > len(s2):
+            # answer is longer than pred.
+            return 1
+        else:
+            # pred is longer than answer.
+            return 2
+    return False
+
+
 # example = {"context_tokens": context_tokens,
 #                                "context_chars": context_chars,
 #                                "ques_tokens": ques_tokens,
@@ -470,17 +512,14 @@ def visualize_error(tbx, pred_dict, eval_path, step, split, num_visuals=10000000
         question = example['question']
         context = example['context']
         answers = example['answers']
-<<<<<<< HEAD
-        y1 = list(Y1.values())[id_]
-        y2 = list(Y2.values())[id_]
-        p1 = list(P1.values())[id_]
-        p2 = list(P2.values())[id_]
-=======
-        y1 = Y1[id_]
-        y2 = Y2[id_]
-        p1 = P1[id_]
-        p2 = P2[id_]
->>>>>>> c37cf773c526ccd01c792bdc2fa7628e819e4e18
+        # y1 = list(Y1.values())[id_]
+        # y2 = list(Y2.values())[id_]
+        # p1 = list(P1.values())[id_]
+        # p2 = list(P2.values())[id_]
+        # y1 = Y1[id_]
+        # y2 = Y2[id_]
+        # p1 = P1[id_]
+        # p2 = P2[id_]
 
         gold = answers[0] if answers else 'N/A'
 
@@ -494,21 +533,21 @@ def visualize_error(tbx, pred_dict, eval_path, step, split, num_visuals=10000000
                 tbx.add_text(tag=f'{split}/{i + 1}_of_{num_visuals}',
                              text_string=tbl_fmt,
                              global_step=step)
-        elif vs_error_mode == 1:
-            if gold != pred:
-                tbl_fmt = (f'- **Question:** {question}\n'
-                           + f'- **Context:** {context}\n'
-                           + f'- **Answer:** {gold}\n'
-                           + f'- **Prediction:** {pred}\n'
-                           + f'- **IndexAns:** {(y1, y2)}\n'
-                           + f'- **IndexPre:** {(p1, p2)}')
-
-                tbx.add_text(tag=f'{split}/{i + 1}_of_{num_visuals}',
-                             text_string=tbl_fmt,
-                             global_step=step)
+        # elif vs_error_mode == 1:
+        #     if gold != pred:
+        #         tbl_fmt = (f'- **Question:** {question}\n'
+        #                    + f'- **Context:** {context}\n'
+        #                    + f'- **Answer:** {gold}\n'
+        #                    + f'- **Prediction:** {pred}\n'
+        #                    + f'- **IndexAns:** {(y1, y2)}\n'
+        #                    + f'- **IndexPre:** {(p1, p2)}')
+        #
+        #         tbx.add_text(tag=f'{split}/{i + 1}_of_{num_visuals}',
+        #                      text_string=tbl_fmt,
+        #                      global_step=step)
         elif vs_error_mode == 2:
             # shorter length of prediction than Answer
-            if gold != pred and pred in gold:
+            if gold != pred and find_lcseque(gold, pred) == 1:
                 tbl_fmt = (f'- **Question:** {question}\n'
                            + f'- **Context:** {context}\n'
                            + f'- **Answer:** {gold}\n'
@@ -518,7 +557,7 @@ def visualize_error(tbx, pred_dict, eval_path, step, split, num_visuals=10000000
                              text_string=tbl_fmt,
                              global_step=step)
         elif vs_error_mode == 3:
-            if gold != pred and gold in pred:
+            if gold != pred and find_lcseque(gold, pred) == 2:
                 tbl_fmt = (f'- **Question:** {question}\n'
                            + f'- **Context:** {context}\n'
                            + f'- **Answer:** {gold}\n'
