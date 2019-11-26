@@ -467,7 +467,7 @@ def find_lcseque(s1, s2):
         else:
             # pred is longer than answer.
             return 2
-    return False
+    return 0
 
 
 # example = {"context_tokens": context_tokens,
