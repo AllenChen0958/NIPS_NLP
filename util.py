@@ -15,6 +15,7 @@ import torch.utils.data as data
 import tqdm
 import numpy as np
 import ujson as json
+import math
 
 from collections import Counter
 
@@ -504,6 +505,13 @@ def visualize_error(tbx, pred_dict, eval_path, step, split, num_visuals=10000000
     visual_ids = np.random.choice(list(pred_dict), size=num_visuals, replace=False)
     with open(eval_path, 'r') as eval_file:
         eval_dict = json.load(eval_file)
+    cnt_error = .0
+    cnt_class_1_long = .0 # Pred longer
+    cnt_class_1_short = .0 # Pred shorter
+    cnt_class_2 = .0
+    error_class = 'None'
+    ratio = .0
+    K = 3
     for i, id_ in enumerate(visual_ids):
         pred = pred_dict[id_] or 'N/A'
         example = eval_dict[str(id_)]
@@ -511,10 +519,10 @@ def visualize_error(tbx, pred_dict, eval_path, step, split, num_visuals=10000000
         context = example['context']
         answers = example['answers']
 
-        y1s = Y1['tensor(%s)'%(str(id_))]
-        y2s = Y2['tensor(%s)'%(str(id_))]
-        p1 = P1[str(id_)]
-        p2 = P2[str(id_)]
+        y1s = Y1['tensor(%s)'%(str(id_))].numpy()
+        y2s = Y2['tensor(%s)'%(str(id_))].numpy()
+        p1 = P1[str(id_)].numpy()
+        p2 = P2[str(id_)].numpy()
         
         gold = answers[0] if answers else 'N/A'
         if int(vs_error_mode) == 0:
@@ -540,28 +548,43 @@ def visualize_error(tbx, pred_dict, eval_path, step, split, num_visuals=10000000
                 isAnswer = compute_em(pred, a_answer)
                 if isAnswer == 1:
                     break
+            if isAnswer == 0:
+                cnt_error += 1
             if isAnswer == 0 and gold != pred and pred != 'N/A':
                 start_Ans = 0.0
                 end_Ans = 0.0
                 avg_start = 0.0
                 avg_end = 0.0
                 if gold != 'N/A':
-                    i = 0
-                    for ch in y1s:
-                        i += 1
-                        start_Ans += ch
-                    for ch in y2s:
-                        end_Ans += ch
-                    start_Ans = start_Ans / float(i)
-                    end_Ans = end_Ans / float(i)
+                    # i = 0
+                    # for ch in y1s:
+                    #     i += 1
+                    #     start_Ans += ch
+                    # for ch in y2s:
+                    #     end_Ans += ch
+
+                    # start_Ans = start_Ans / float(i)
+                    # end_Ans = end_Ans / float(i)
+                    start_Ans = np.mean(y1s)
+                    end_Ans = np.mean(y2s)
                     avg_start = start_Ans - p1
-                    avg_end = end_Ans - p2                  
+                    avg_end = end_Ans - p2
+                    if np.abs(avg_start-p1) < K and np.abs(avg_end-p2) < K:
+                        if len(max(answers)) < len(pred):
+                            cnt_class_1_long += 1
+                            error_class = 'Boundary: pred longer'
+                            ratio = cnt_class_1_long / cnt_error
+                        if len(max(answers)) > len(pred):
+                            cnt_class_1_short += 1
+                            error_class = 'Boundary: pred shorter'
+                            ratio = cnt_class_1_short / cnt_error
                     tbl_fmt = (f'- **Question:** {question}\n'
                             + f'- **Context:** {context}\n'
                             + f'- **Answer:** {gold}\n'
                             + f'- **Prediction:** {pred}\n'
                             + f'- **(start_shift, end_shift):** {(avg_start, avg_end)}\n'
-                            + f'- **(start_Ans, end_Ans):** {(start_Ans, end_Ans)}')
+                            + f'- **(start_Ans, end_Ans):** {(start_Ans, end_Ans)}\n'
+                            + f'- **(Error_class, Ratio, total):** {(error_class, ratio, cnt_error)}\n')
                     tbx.add_text(tag=f'{split}/{i + 1}_of_{num_visuals}',
                                 text_string=tbl_fmt,
                                 global_step=step)
