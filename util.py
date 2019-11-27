@@ -584,7 +584,7 @@ def visualize_error(tbx, pred_dict, eval_path, step, split, num_visuals=10000000
                             + f'- **Prediction:** {pred}\n'
                             + f'- **(start_shift, end_shift):** {(avg_start, avg_end)}\n'
                             + f'- **(start_Ans, end_Ans):** {(start_Ans, end_Ans)}\n'
-                            + f'- **(Error_class, Ratio, total):** {(error_class, ratio, cnt_error)}\n')
+                            + f'- **(Error_class, Ratio, total):** {(error_class, ratio, cnt_error)}')
                     tbx.add_text(tag=f'{split}/{i + 1}_of_{num_visuals}',
                                 text_string=tbl_fmt,
                                 global_step=step)
