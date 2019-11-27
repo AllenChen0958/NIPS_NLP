@@ -556,16 +556,15 @@ def visualize_error(tbx, pred_dict, eval_path, step, split, num_visuals=10000000
                     end_Ans = end_Ans / float(i)
                     avg_start = start_Ans - p1
                     avg_end = end_Ans - p2                  
-                tbl_fmt = (f'- **Question:** {question}\n'
-                           + f'- **Context:** {context}\n'
-                           + f'- **Answer:** {gold}\n'
-                           + f'- **Prediction:** {pred}\n'
-                           + f'- **(start_shift, end_shift):** {(avg_start, avg_end)}\n'
-                           + f'- **(start_Ans, end_Ans):** {(start_Ans, end_Ans)}')
-
-                tbx.add_text(tag=f'{split}/{i + 1}_of_{num_visuals}',
-                             text_string=tbl_fmt,
-                             global_step=step)
+                    tbl_fmt = (f'- **Question:** {question}\n'
+                            + f'- **Context:** {context}\n'
+                            + f'- **Answer:** {gold}\n'
+                            + f'- **Prediction:** {pred}\n'
+                            + f'- **(start_shift, end_shift):** {(avg_start, avg_end)}\n'
+                            + f'- **(start_Ans, end_Ans):** {(start_Ans, end_Ans)}')
+                    tbx.add_text(tag=f'{split}/{i + 1}_of_{num_visuals}',
+                                text_string=tbl_fmt,
+                                global_step=step)
 
 
 def save_preds(preds, save_dir, file_name='predictions.csv'):
