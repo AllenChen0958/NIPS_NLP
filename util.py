@@ -428,6 +428,48 @@ def visualize(tbx, pred_dict, eval_path, step, split, num_visuals):
                      global_step=step)
 
 
+# Find common substring:
+def find_lcseque(s1, s2):
+    # 生成字符串长度加1的0矩阵，m用来保存对应位置匹配的结果
+    # s1: answer, s2: prediction
+    m = [[0 for x in range(len(s2) + 1)] for y in range(len(s1) + 1)]
+    # d用来记录转移方向
+    d = [[None for x in range(len(s2) + 1)] for y in range(len(s1) + 1)]
+
+    for p1 in range(len(s1)):
+        for p2 in range(len(s2)):
+            if s1[p1] == s2[p2]:  # 字符匹配成功，则该位置的值为左上方的值加1
+                m[p1 + 1][p2 + 1] = m[p1][p2] + 1
+                d[p1 + 1][p2 + 1] = 'ok'
+            elif m[p1 + 1][p2] > m[p1][p2 + 1]:  # 左值大于上值，则该位置的值为左值，并标记回溯时的方向
+                m[p1 + 1][p2 + 1] = m[p1 + 1][p2]
+                d[p1 + 1][p2 + 1] = 'left'
+            else:  # 上值大于左值，则该位置的值为上值，并标记方向up
+                m[p1 + 1][p2 + 1] = m[p1][p2 + 1]
+                d[p1 + 1][p2 + 1] = 'up'
+    (p1, p2) = (len(s1), len(s2))
+    s = []
+    while m[p1][p2]:  # 不为None时
+        c = d[p1][p2]
+        if c == 'ok':  # 匹配成功，插入该字符，并向左上角找下一个
+            s.append(s1[p1 - 1])
+            p1 -= 1
+            p2 -= 1
+        if c == 'left':  # 根据标记，向左找下一个
+            p2 -= 1
+        if c == 'up':  # 根据标记，向上找下一个
+            p1 -= 1
+    s.reverse()
+    if len(s) != 0:
+        if len(s1) > len(s2):
+            # answer is longer than pred.
+            return 1
+        else:
+            # pred is longer than answer.
+            return 2
+    return 0
+
+
 # example = {"context_tokens": context_tokens,
 #                                "context_chars": context_chars,
 #                                "ques_tokens": ques_tokens,
@@ -459,9 +501,7 @@ def visualize_error(tbx, pred_dict, eval_path, step, split, num_visuals=10000000
         return
     if num_visuals > len(pred_dict):
         num_visuals = len(pred_dict)
-
     visual_ids = np.random.choice(list(pred_dict), size=num_visuals, replace=False)
-
     with open(eval_path, 'r') as eval_file:
         eval_dict = json.load(eval_file)
     for i, id_ in enumerate(visual_ids):
@@ -470,59 +510,62 @@ def visualize_error(tbx, pred_dict, eval_path, step, split, num_visuals=10000000
         question = example['question']
         context = example['context']
         answers = example['answers']
+
+        y1s = Y1['tensor(%s)'%(str(id_))]
+        y2s = Y2['tensor(%s)'%(str(id_))]
+        p1 = P1[str(id_)]
+        p2 = P2[str(id_)]
         
-        print(type(id_), id_)
-        y1 = list(Y1.values())[int(id_)]
-        y2 = list(Y2.values())[int(id_)]
-        p1 = list(P1.values())[int(id_)]
-        p2 = list(P2.values())[int(id_)]
-
         gold = answers[0] if answers else 'N/A'
-
-        if vs_error_mode == 0:
-            if gold != pred:
+        if int(vs_error_mode) == 0:
+            isAnswer = 0
+            for i, a_answer in enumerate(answers):
+                print(pred, a_answer)
+                isAnswer = compute_em(pred, a_answer)
+                if isAnswer == 1:
+                    break
+            if isAnswer == 0:
                 tbl_fmt = (f'- **Question:** {question}\n'
                            + f'- **Context:** {context}\n'
-                           + f'- **Answer:** {gold}\n'
+                           + f'- **Answer:** {answers}\n'
                            + f'- **Prediction:** {pred}')
 
                 tbx.add_text(tag=f'{split}/{i + 1}_of_{num_visuals}',
                              text_string=tbl_fmt,
                              global_step=step)
+                
         elif vs_error_mode == 1:
-            if gold != pred:
+            isAnswer = 0
+            for i, a_answer in enumerate(answers):
+                isAnswer = compute_em(pred, a_answer)
+                if isAnswer == 1:
+                    break
+            if isAnswer == 0 and gold != pred and pred != 'N/A':
+                start_Ans = 0.0
+                end_Ans = 0.0
+                avg_start = 0.0
+                avg_end = 0.0
+                if gold != 'N/A':
+                    i = 0
+                    for ch in y1s:
+                        i += 1
+                        start_Ans += ch
+                    for ch in y2s:
+                        end_Ans += ch
+                    start_Ans = start_Ans / float(i)
+                    end_Ans = end_Ans / float(i)
+                    avg_start = start_Ans - p1
+                    avg_end = end_Ans - p2                  
                 tbl_fmt = (f'- **Question:** {question}\n'
                            + f'- **Context:** {context}\n'
                            + f'- **Answer:** {gold}\n'
                            + f'- **Prediction:** {pred}\n'
-                           + f'- **IndexAns:** {(y1, y2)}\n'
-                           + f'- **IndexPre:** {(p1, p2)}')
+                           + f'- **(start_shift, end_shift):** {(avg_start, avg_end)}\n'
+                           + f'- **(start_Ans, end_Ans):** {(start_Ans, end_Ans)}')
 
                 tbx.add_text(tag=f'{split}/{i + 1}_of_{num_visuals}',
                              text_string=tbl_fmt,
                              global_step=step)
-        elif vs_error_mode == 2:
-            # shorter length of prediction than Answer
-            if gold != pred and 下·pred in gold:
-                tbl_fmt = (f'- **Question:** {question}\n'
-                           + f'- **Context:** {context}\n'
-                           + f'- **Answer:** {gold}\n'
-                           + f'- **Prediction:** {pred}')
-
-                tbx.add_text(tag=f'{split}/{i + 1}_of_{num_visuals}',
-                             text_string=tbl_fmt,
-                             global_step=step)
-        elif vs_error_mode == 3:
-            if gold != pred and gold in pred:
-                tbl_fmt = (f'- **Question:** {question}\n'
-                           + f'- **Context:** {context}\n'
-                           + f'- **Answer:** {gold}\n'
-                           + f'- **Prediction:** {pred}')
-
-                tbx.add_text(tag=f'{split}/{i + 1}_of_{num_visuals}',
-                             text_string=tbl_fmt,
-                             global_step=step)
-            pass
 
 
 def save_preds(preds, save_dir, file_name='predictions.csv'):

@@ -86,7 +86,7 @@ def main(args):
             # Store y1, y2... Li Zuoyan
             # Y1.append(y1)
             # Y2.append(y2)
-            for i, uid in enumerate(ids):
+            for uid in ids:
                 try:
                     Y1[str(uid)] = y1
                     Y2[str(uid)] = y2
@@ -151,7 +151,7 @@ def main(args):
                        eval_path=eval_file,
                        step=0,
                        split=args.split,
-                       num_visuals=args.num_visuals,Y1=Y1,Y2=Y2,P1=P1,P2=P2,vs_error_mode=1)
+                       num_visuals=args.num_visuals,Y1=Y1,Y2=Y2,P1=P1,P2=P2,vs_error_mode=args.vs_error_mode)
 
     # Write submission file
     sub_path = join(args.save_dir, args.split + '_' + args.sub_file)
