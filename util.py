@@ -521,8 +521,8 @@ def visualize_error(tbx, pred_dict, eval_path, step, split, num_visuals=10000000
 
         y1s = Y1['tensor(%s)'%(str(id_))].numpy()
         y2s = Y2['tensor(%s)'%(str(id_))].numpy()
-        p1 = P1[str(id_)].numpy()
-        p2 = P2[str(id_)].numpy()
+        p1 = P1[str(id_)]
+        p2 = P2[str(id_)]
         
         gold = answers[0] if answers else 'N/A'
         if int(vs_error_mode) == 0:
