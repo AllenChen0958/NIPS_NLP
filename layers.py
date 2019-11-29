@@ -131,7 +131,7 @@ class BiDAFAttention(nn.Module):
         hidden_size (int): Size of hidden activations.
         drop_prob (float): Probability of zero-ing out activations.
     """
-    def __init__(self, hidden_size, drop_prob=0.1):
+    def __init__(self, hidden_size, drop_prob=0.1, c_len, ndf):
         super(BiDAFAttention, self).__init__()
         self.drop_prob = drop_prob
         self.c_weight = nn.Parameter(torch.zeros(hidden_size, 1))
@@ -140,6 +140,19 @@ class BiDAFAttention(nn.Module):
         for weight in (self.c_weight, self.q_weight, self.cq_weight):
             nn.init.xavier_uniform_(weight)
         self.bias = nn.Parameter(torch.zeros(1))
+
+        self.hidden_size = hidden_size
+        main = nn.Sequential(
+            # Z goes into a linear of size: ndf
+            nn.Linear((2 * 4 * hidden_size) ** 2, ndf),
+            nn.ReLU(True),
+            nn.Linear(ndf, ndf),
+            nn.ReLU(True),
+            nn.Linear(ndf, ndf),
+            nn.ReLU(True),
+            nn.Linear(ndf, 1),
+        )
+        self.main = main
 
     def forward(self, c, q, c_mask, q_mask):
         batch_size, c_len, _ = c.size()
@@ -151,13 +164,16 @@ class BiDAFAttention(nn.Module):
         s2 = masked_softmax(s, c_mask, dim=1)       # (batch_size, c_len, q_len)
 
         # (bs, c_len, q_len) x (bs, q_len, hid_size) => (bs, c_len, hid_size)
+        # batch multiply
         a = torch.bmm(s1, q)
         # (bs, c_len, c_len) x (bs, c_len, hid_size) => (bs, c_len, hid_size)
         b = torch.bmm(torch.bmm(s1, s2.transpose(1, 2)), c)
 
         x = torch.cat([c, a, c * a, c * b], dim=2)  # (bs, c_len, 4 * hid_size)
 
-        return x
+        f = self.gram_matrix(x)
+        f = self.main(f.view(batch_size, (2 * 4 * self.hidden_size)**2))
+        return x, f
 
     def get_similarity_matrix(self, c, q):
         """Get the "similarity matrix" between context and query (using the
@@ -183,6 +199,11 @@ class BiDAFAttention(nn.Module):
 
         return s
 
+    def gram_matrix(self, x):
+        (b, c, h) = x.size()
+        features_t = x.transpose(1, 2)
+        gram = x.bmm(features_t) / (h * c)
+        return gram
 
 class BiDAFOutput(nn.Module):
     """Output layer used by BiDAF for question answering.

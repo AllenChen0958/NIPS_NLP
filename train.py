@@ -93,6 +93,7 @@ def main(args):
                                  num_workers=args.num_workers,
                                  collate_fn=collate_fn)
 
+    one = torch.FloatTensor([1])
     # Train
     log.info('Training...')
     steps_till_eval = args.eval_steps
@@ -115,13 +116,15 @@ def main(args):
                 optimizer.zero_grad()
 
                 # Forward
-                log_p1, log_p2 = model(cw_idxs, qw_idxs)
+                log_p1, log_p2, f = model(cw_idxs, qw_idxs)
                 y1, y2 = y1.to(device), y2.to(device)
+                f = f.to(device)
                 # L(theta) = - 1/N * sum(log(P1_yi_1) + log(P2_yi_2))
                 loss = F.nll_loss(log_p1, y1) + F.nll_loss(log_p2, y2)
                 loss_val = loss.item()
 
                 # Backward
+                f.backward(one)
                 loss.backward()
                 nn.utils.clip_grad_norm_(model.parameters(), args.max_grad_norm)
                 optimizer.step()
