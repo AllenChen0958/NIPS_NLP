@@ -39,8 +39,6 @@ class BiDAF(nn.Module):
 
         self.word_emd = nn.Embedding.from_pretrained(word_vectors, freeze=True)
 
-        self.proj = nn.Linear(word_vectors.size(1), hidden_size, bias=False)
-
         # assert hidden_size * 2 == (char_channel_size + word_dim)
 
         # highway network
@@ -54,9 +52,9 @@ class BiDAF(nn.Module):
         #     setattr(self, f'hightway_gate{i}', nn.Sequential(
         #         nn.Linear(hidden_size * 2, hidden_size * 2), nn.Sigmoid()))
 
-        # self.emb = layers.Embedding(word_vectors=word_vectors,
-        #                             hidden_size=hidden_size,
-        #                             drop_prob=drop_prob)
+        self.emb = layers.Embedding(word_vectors=word_vectors,
+                                    hidden_size=hidden_size,
+                                    drop_prob=drop_prob)
 
         self.enc = layers.RNNEncoder(input_size=hidden_size*2,
                                      hidden_size=hidden_size,
@@ -84,8 +82,8 @@ class BiDAF(nn.Module):
         # (batch_size, q_len, hidden_size)
         q_word = self.word_emd(qw_idxs)
 
-        c_word = self.proj(c_word)
-        q_word = self.proj(q_word)
+        test_c = self.emb(cw_idxs)
+        test_q = self.emb(qw_idxs)
 
         c_char = self.char_emd(cc_idxs)
         q_char = self.char_emd(qc_idxs)
