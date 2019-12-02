@@ -39,6 +39,8 @@ class BiDAF(nn.Module):
 
         self.word_emd = nn.Embedding.from_pretrained(word_vectors, freeze=True)
 
+        self.proj = nn.Linear(word_vectors.size(1), hidden_size, bias=False)
+
         # assert hidden_size * 2 == (char_channel_size + word_dim)
 
         # highway network
@@ -81,6 +83,9 @@ class BiDAF(nn.Module):
         c_word = self.word_emd(cw_idxs)
         # (batch_size, q_len, hidden_size)
         q_word = self.word_emd(qw_idxs)
+
+        c_word = self.proj(c_word)
+        q_word = self.proj(q_word)
 
         c_char = self.char_emd(cc_idxs)
         q_char = self.char_emd(qc_idxs)
