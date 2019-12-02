@@ -46,7 +46,8 @@ class BiDAF(nn.Module):
                                          ndf=100)
         self.self_att = layers.SelfAttentionRNET(in_size = 8 * hidden_size,
                                                  hidden_size = hidden_size,
-                                                 dropout = drop_prob)
+                                                 dropout = drop_prob,
+                                                 )
 
         self.mod = layers.RNNEncoder(input_size=8 * hidden_size,
                                      hidden_size=hidden_size,
