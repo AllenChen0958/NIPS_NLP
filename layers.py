@@ -12,6 +12,35 @@ from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
 from util import masked_softmax
 
 
+# class C_Embedding(nn.Module):
+#     def __init__(self, char_vocab_size, char_dim, char_channel_width):
+#         super(C_Embedding, self).__init__()
+#         self.char_emb = nn.Embedding(char_vocab_size, char_dim, padding_idx=1)
+#         nn.init.uniform_(self.char_emb.weight, -0.001, 0.001)
+
+#         self.char_conv = nn.Conv2d(
+#             1, char_channel_size, (char_dim, char_channel_width))
+
+#     def forward(self, x):
+#         """
+#         :paramx: (batch, seq_len, word_len)
+#         :return: (batch, seq_len, char_channel_size)
+#         """
+#         batch_size = x.size(0)
+#         # (batch, seq_len, word_len, char_dim)
+#         x = self.dropout(self.char_emb(x))
+#         #(batch*seq_len, 1, char_dim, word_len)
+#         x = x.view(-1, self.char_dim, x.size(2)).unsqueeze(1)
+#         # (batch*seq_len, char_channel_size, 1, conv_len)->(batch*seq_len, char_channel_size, conv_len)
+#         x = self.char_conv(x).squeeze()
+#         # (batch * seq_len, char_channel_size, 1) -> (batch * seq_len, char_channel_size)
+#         x = F.max_pool1d(x, x.size(2)).squeeze()
+#         # (batch, seq_len, char_channel_size)
+#         x = x.view(batch_size, -1, self.char_channel_size)
+
+#         return x
+
+
 class Embedding(nn.Module):
     """Embedding layer used by BiDAF, without the character-level component.
 
