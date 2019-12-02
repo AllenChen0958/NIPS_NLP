@@ -35,9 +35,8 @@ class BiDAF(nn.Module):
 
         self.hidden_size = hidden_size
 
-        self.char_emd = nn.Embedding.from_pretrained(char_vectors, freeze=True)
-
-        self.word_emd = nn.Embedding.from_pretrained(word_vectors, freeze=True)
+        self.word_emd = nn.Embedding.from_pretrained(word_vectors)
+        self.char_emd = nn.Embedding.from_pretrained(char_vectors)
 
         # assert hidden_size * 2 == (char_channel_size + word_dim)
 
@@ -52,9 +51,9 @@ class BiDAF(nn.Module):
         #     setattr(self, f'hightway_gate{i}', nn.Sequential(
         #         nn.Linear(hidden_size * 2, hidden_size * 2), nn.Sigmoid()))
 
-        self.emb = layers.Embedding(word_vectors=word_vectors,
-                                    hidden_size=hidden_size,
-                                    drop_prob=drop_prob)
+        # self.emb = layers.Embedding(word_vectors=word_vectors,
+        #                             hidden_size=hidden_size,
+        #                             drop_prob=drop_prob)
 
         self.enc = layers.RNNEncoder(input_size=hidden_size*2,
                                      hidden_size=hidden_size,
@@ -82,15 +81,16 @@ class BiDAF(nn.Module):
         # (batch_size, q_len, hidden_size)
         q_word = self.word_emd(qw_idxs)
 
-        test_c = self.emb(cw_idxs)
-        test_q = self.emb(qw_idxs)
-
         c_char = self.char_emd(cc_idxs)
         q_char = self.char_emd(qc_idxs)
 
+        # (batch_size, seq_len, embbed size)
+        c_char = c_char.view(c_char.size(0), c_char.size(1), -1)
+        q_char = q_char.view(q_char.size(0), q_char.size(1), -1)
+
         print("c word size: ", c_word.size())
-        print("c character size: ", c_char.size())
         print("q word size: ", q_word.size())
+        print("c character size: ", c_char.size())
         print("q character size: ", q_char.size())
 
         c_cat = torch.cat([c_word, c_char], dim=-1)
