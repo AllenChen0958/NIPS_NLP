@@ -40,6 +40,33 @@ from util import masked_softmax
 
 #         return x
 
+class CharEmbedding(nn.Module):
+    def __init__(self, char_vectors, hidden_size, drop_prob=0.):
+        # self.drop_prob = drop_prob
+        self.embed = nn.Embedding.from_pretrained(char_vectors)
+        self.proj = nn.Linear(char_vectors.size(
+            1)*char_vectors.size(2), hidden_size, bias=False)
+
+    def forward(self, x):
+        emb = self.embed(x)
+        # TODO: 降维
+        emb = emb.view(emb.size(0), emb.size(1), -1)
+        emb = self.proj(emb)
+
+        return emb
+
+
+class WordEmbedding(nn.Module):
+    def __init__(self, word_vectors, hidden_size, drop_prob=0.):
+        self.embed = nn.Embedding.from_pretrained(word_vectors)
+        self.proj = nn.Linear(word_vectors.size(1), hidden_size, bias=False)
+
+    def forward(self, x):
+        emb = self.embed(x)
+        emb = self.proj(emb)
+
+        return emb
+
 
 class Embedding(nn.Module):
     """Embedding layer used by BiDAF, without the character-level component.

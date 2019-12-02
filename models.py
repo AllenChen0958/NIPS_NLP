@@ -35,8 +35,8 @@ class BiDAF(nn.Module):
 
         self.hidden_size = hidden_size
 
-        self.word_emd = nn.Embedding.from_pretrained(word_vectors)
-        self.char_emd = nn.Embedding.from_pretrained(char_vectors)
+        self.word_emb = layers.WordEmbedding(word_vectors, hidden_size)
+        self.char_emb = layers.WordEmbedding(char_vectors, hidden_size)
 
         # assert hidden_size * 2 == (char_channel_size + word_dim)
 
@@ -77,16 +77,12 @@ class BiDAF(nn.Module):
         c_len, q_len = c_mask.sum(-1), q_mask.sum(-1)
 
         # (batch_size, c_len, hidden_size)
-        c_word = self.word_emd(cw_idxs)
         # (batch_size, q_len, hidden_size)
+        c_word = self.word_emd(cw_idxs)
         q_word = self.word_emd(qw_idxs)
 
         c_char = self.char_emd(cc_idxs)
         q_char = self.char_emd(qc_idxs)
-
-        # (batch_size, seq_len, embbed size)
-        c_char = c_char.view(c_char.size(0), c_char.size(1), -1)
-        q_char = q_char.view(q_char.size(0), q_char.size(1), -1)
 
         print("c word size: ", c_word.size())
         print("q word size: ", q_word.size())
