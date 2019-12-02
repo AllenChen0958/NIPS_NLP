@@ -78,11 +78,11 @@ class BiDAF(nn.Module):
 
         # (batch_size, c_len, hidden_size)
         # (batch_size, q_len, hidden_size)
-        c_word = self.word_emd(cw_idxs)
-        q_word = self.word_emd(qw_idxs)
+        c_word = self.word_emb(cw_idxs)
+        q_word = self.word_emb(qw_idxs)
 
-        c_char = self.char_emd(cc_idxs)
-        q_char = self.char_emd(qc_idxs)
+        c_char = self.char_emb(cc_idxs)
+        q_char = self.char_emb(qc_idxs)
 
         print("c word size: ", c_word.size())
         print("q word size: ", q_word.size())

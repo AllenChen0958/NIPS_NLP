@@ -45,6 +45,7 @@ def main(args):
     log.info('Loading embeddings...')
     word_vectors = util.torch_from_json(args.word_emb_file)
     char_vectors = util.torch_from_json(args.char_emb_file)
+    print(word_vectors.size())
     print(char_vectors.size())
 
     # Get model

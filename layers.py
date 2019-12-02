@@ -45,6 +45,7 @@ class CharEmbedding(nn.Module):
         super(CharEmbedding, self).__init__()
         self.drop_prob = drop_prob
         self.embed = nn.Embedding.from_pretrained(char_vectors)
+        print(char_vectors.size(2)*char_vectors.size(3))
         self.proj = nn.Linear(char_vectors.size(
             1)*char_vectors.size(2), hidden_size, bias=False)
 
