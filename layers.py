@@ -132,7 +132,7 @@ class BiDAFAttention(nn.Module):
         hidden_size (int): Size of hidden activations.
         drop_prob (float): Probability of zero-ing out activations.
     """
-    def __init__(self, hidden_size, drop_prob=0.1, ndf=100):
+    def __init__(self, hidden_size, drop_prob=0.1):
         super(BiDAFAttention, self).__init__()
         self.drop_prob = drop_prob
         self.c_weight = nn.Parameter(torch.zeros(hidden_size, 1))
@@ -141,19 +141,6 @@ class BiDAFAttention(nn.Module):
         for weight in (self.c_weight, self.q_weight, self.cq_weight):
             nn.init.xavier_uniform_(weight)
         self.bias = nn.Parameter(torch.zeros(1))
-
-        self.hidden_size = hidden_size
-        main = nn.Sequential(
-            # Z goes into a linear of size: ndf
-            nn.Linear((2 * 4 * hidden_size) ** 2, ndf),
-            nn.ReLU(True),
-            nn.Linear(ndf, ndf),
-            nn.ReLU(True),
-            nn.Linear(ndf, ndf),
-            nn.ReLU(True),
-            nn.Linear(ndf, 1),
-        )
-        self.main = main
 
     def forward(self, c, q, c_mask, q_mask):
         batch_size, c_len, _ = c.size()
@@ -171,9 +158,6 @@ class BiDAFAttention(nn.Module):
         b = torch.bmm(torch.bmm(s1, s2.transpose(1, 2)), c)
 
         x = torch.cat([c, a, c * a, c * b], dim=2)  # (bs, c_len, 4 * hid_size)
-
-        f = self.gram_matrix(x)
-#         f = self.main(f.view(batch_size, (2 * 4 * self.hidden_size)**2))
         return x
 
     def get_similarity_matrix(self, c, q):
@@ -244,79 +228,89 @@ class BiDAFOutput(nn.Module):
 
         return log_p1, log_p2
 
+############################################################################
+class Norm(nn.Module):
+    def __init__(self, d_model, eps=1e-6):
+        super().__init__()
 
-# Self-Attention - R-net ... by Forrest
-# Input is question-aware passage representation
-# Output is self-attention question-aware passage representation
-class SelfAttentionRNET(nn.Module):
-    def __init__(self, in_size, hidden_size, dropout):
-        super(SelfAttentionRNET, self).__init__()
-        self.hidden_size = hidden_size
-        self.in_size = in_size
-        self.gru = nn.GRUCell(input_size=in_size, hidden_size=self.hidden_size)
-        self.Wp = nn.Linear(self.in_size, self.hidden_size, bias=False)
-        self.Wp_ = nn.Linear(self.in_size, self.hidden_size, bias=False)
-        self.out_size = self.in_size
-        self.dropout = nn.Dropout(p=dropout)
+        self.size = d_model
 
-    def forward(self, v):
-        device = 'cuda'
-        (l, _, _) = v.size()
-        h = torch.randn(self.in_size, self.hidden_size).to(device)
-        V = torch.randn(self.in_size, self.hidden_size, 1).to(device)
-        hs = torch.zeros(l, self.in_size, self.out_size).to(device)
-        print("v:", v.size())
-        print("V:", V.size())
-        for i in range(l):
-            Wpv = self.Wp(v[i])
-            Wpv_ = self.Wp_(v)
-            x = torch.tanh(Wpv + Wpv_)
-            x = x.permute([1, 0, 2])
-            print(x.size(), V.size())
-            s = torch.bmm(x, V)
-            s = torch.squeeze(s, 2)
-            a = F.softmax(s, 1).unsqueeze(1)
-            c = torch.bmm(a, v.permute([1, 0, 2])).squeeze()
-            h = self.gru(c, h)
-            hs[i] = h
-            # logger.gpu_mem_log("SelfMatcher {:002d}".format(i), ['x', 'Wpv', 'Wpv_', 's', 'c', 'hs'],
-            #                    [x.data, Wpv.data, Wpv_.data, s.data, c.data, hs.data])
-            del Wpv, Wpv_, x, s, a, c
-        hs = self.dropout(hs)
-        del h, v
-        return hs
+        # create two learnable parameters to calibrate normalisation
+        self.alpha = nn.Parameter(torch.ones(self.size))
+        self.bias = nn.Parameter(torch.zeros(self.size))
 
-# Self-Att in transformer  ... Forrest
-# class SelfAttentionTrans(nn.module):
-#     """ Self-Attention in Transformer.
-#         Args:
-#             h_dimension (int): Hidden size used in the BiDAF model.
-#             H_dimension (int): dimension of Q, K, V matrix.
-#     """
-#     def __init__(self, batch_size, H_dimension, h_dimension):
-#         super(SelfAttentionTrans, self).__init__()
-#         self.batch_size = batch_size
-#         self.H_dimension = H_dimension
-#         self.h_dimension = h_dimension
-#         # self.W_Q = nn.Parameter(torch.Tensor(h_dimension, H_dimension))
-#         # self.W_K = nn.Parameter(torch.Tensor(h_dimension, H_dimension))
-#         # self.W_V = nn.Parameter(torch.Tensor(h_dimension, H_dimension))
+        self.eps = eps
 
-#     def _attn(self, q, k, v):
-#         w = torch.matmul(q, k)
-#         if self.scale:
-#             w = w / math.sqrt(v.size(-1))
-#         # w = w * self.b + -1e9 * (1 - self.b)  # TF implem method: mask_attn_weights
-#         # XD: self.b may be larger than w, so we need to crop it
-#         b = self.b[:, :, :w.size(-2), :w.size(-1)]
-#         w = w * b + -1e9 * (1 - b)
-
-#         w = nn.Softmax(dim=-1)(w)
-#         w = self.attn_dropout(w)
-#         return torch.matmul(w, v)
+    def forward(self, x):
+        norm = self.alpha * (x - x.mean(dim=-1, keepdim=True)) \
+               / (x.std(dim=-1, keepdim=True) + self.eps) + self.bias
+        return norm
 
 
+def attention(q, k, v, d_k, mask=None, dropout=None):
+    scores = torch.matmul(q, k.transpose(-2, -1)) / math.sqrt(d_k)
 
-#     def forward(self, PQ_att):
-#         W_Q = nn.Parameter
-#         return Z
+    if mask is not None:
+        mask = mask.unsqueeze(1)
+        scores = scores.masked_fill(mask == 0, -1e9)
+
+    scores = F.softmax(scores, dim=-1)
+
+    if dropout is not None:
+        scores = dropout(scores)
+
+    output = torch.matmul(scores, v)
+    return output
+
+
+class MultiHeadAttention(nn.Module):
+    def __init__(self, heads, d_model, dropout=0.1):
+        super().__init__()
+
+        self.d_model = d_model
+        self.d_k = d_model // heads
+        self.h = heads
+
+        self.q_linear = nn.Linear(d_model, d_model)
+        self.v_linear = nn.Linear(d_model, d_model)
+        self.k_linear = nn.Linear(d_model, d_model)
+
+        self.dropout = nn.Dropout(dropout)
+        self.out = nn.Linear(d_model, d_model)
+
+    def forward(self, q, k, v, mask=None):
+        bs = q.size(0)
+
+        # perform linear operation and split into N heads
+        k = self.k_linear(k).view(bs, -1, self.h, self.d_k)
+        q = self.q_linear(q).view(bs, -1, self.h, self.d_k)
+        v = self.v_linear(v).view(bs, -1, self.h, self.d_k)
+
+        # transpose to get dimensions bs * N * sl * d_model
+        k = k.transpose(1, 2)
+        q = q.transpose(1, 2)
+        v = v.transpose(1, 2)
+
+        # calculate attention using function we will define next
+        scores = attention(q, k, v, self.d_k, mask, self.dropout)
+        # concatenate heads and put through final linear layer
+        concat = scores.transpose(1, 2).contiguous() \
+            .view(bs, -1, self.d_model)
+        output = self.out(concat)
+
+        return output
+
+
+# class FeedForward(nn.Module):
+#     def __init__(self, d_model, d_ff=2048, dropout=0.1):
+#         super().__init__()
+#
+#         # We set d_ff as a default to 2048
+#         self.linear_1 = nn.Linear(d_model, d_ff)
+#         self.dropout = nn.Dropout(dropout)
+#         self.linear_2 = nn.Linear(d_ff, d_model)
+#
+#     def forward(self, x):
+#         x = self.dropout(F.relu(self.linear_1(x)))
+#         x = self.linear_2(x)
+#         return x

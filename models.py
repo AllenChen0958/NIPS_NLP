@@ -30,7 +30,7 @@ class BiDAF(nn.Module):
         drop_prob (float): Dropout probability.
     """
 
-    def __init__(self, word_vectors, hidden_size, drop_prob=0.):
+    def __init__(self, word_vectors, hidden_size, drop_prob=0., heads = 8):
         super(BiDAF, self).__init__()
         self.emb = layers.Embedding(word_vectors=word_vectors,
                                     hidden_size=hidden_size,
@@ -42,12 +42,12 @@ class BiDAF(nn.Module):
                                      drop_prob=drop_prob)
 
         self.att = layers.BiDAFAttention(hidden_size=2 * hidden_size,
-                                         drop_prob=drop_prob,
-                                         ndf=100)
-        self.self_att = layers.SelfAttentionRNET(in_size = 8 * hidden_size,
-                                                 hidden_size = hidden_size,
-                                                 dropout = drop_prob,
-                                                 )
+
+        self.norm = layers.Norm(d_model=8*hidden_size)
+
+        self.self_att = layers.MultiHeadAttention(heads=heads,
+                                                  d_model=8 * hidden_size,
+                                                  dropout=drop_prob)
 
         self.mod = layers.RNNEncoder(input_size=8 * hidden_size,
                                      hidden_size=hidden_size,
@@ -77,10 +77,14 @@ class BiDAF(nn.Module):
 
         att = self.att(c_enc, q_enc,
                        c_mask, q_mask, )    # (batch_size, c_len, 8 * hidden_size)
+        x = self.norm(att)
 
-        self_att = self.self_att(att)
-        mod = self.mod(self_att, c_len)        # (batch_size, c_len, 2 * hidden_size)
+        selfatt = self.self_att(x, x, x)
 
-        out = self.out(att, mod, c_mask)  # 2 tensors, each (batch_size, c_len)
+        print("mhseladd size:", selfatt.size())
+
+        mod = self.mod(selfatt, c_len)        # (batch_size, c_len, 2 * hidden_size)
+
+        out = self.out(selfatt, mod, c_mask)  # 2 tensors, each (batch_size, c_len)
 
         return out
