@@ -42,7 +42,8 @@ from util import masked_softmax
 
 class CharEmbedding(nn.Module):
     def __init__(self, char_vectors, hidden_size, drop_prob=0.):
-        # self.drop_prob = drop_prob
+        super(CharEmbedding, self).__init__()
+        self.drop_prob = drop_prob
         self.embed = nn.Embedding.from_pretrained(char_vectors)
         self.proj = nn.Linear(char_vectors.size(
             1)*char_vectors.size(2), hidden_size, bias=False)
@@ -58,6 +59,8 @@ class CharEmbedding(nn.Module):
 
 class WordEmbedding(nn.Module):
     def __init__(self, word_vectors, hidden_size, drop_prob=0.):
+        super(WordEmbedding, self).__init__()
+        self.drop_prob = drop_prob
         self.embed = nn.Embedding.from_pretrained(word_vectors)
         self.proj = nn.Linear(word_vectors.size(1), hidden_size, bias=False)
 
