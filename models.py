@@ -36,7 +36,7 @@ class BiDAF(nn.Module):
         self.hidden_size = hidden_size
 
         self.word_emb = layers.WordEmbedding(word_vectors, hidden_size)
-        self.char_emb = layers.WordEmbedding(char_vectors, hidden_size)
+        self.char_emb = layers.CharEmbedding(char_vectors, hidden_size)
 
         # assert hidden_size * 2 == (char_channel_size + word_dim)
 
@@ -84,17 +84,17 @@ class BiDAF(nn.Module):
         c_char = self.char_emb(cc_idxs)
         q_char = self.char_emb(qc_idxs)
 
-        print("c word size: ", c_word.size())
-        print("q word size: ", q_word.size())
-        print("c character size: ", c_char.size())
-        print("q character size: ", q_char.size())
+        # print("c word size: ", c_word.size())
+        # print("q word size: ", q_word.size())
+        # print("c character size: ", c_char.size())
+        # print("q character size: ", q_char.size())
 
         c_cat = torch.cat([c_word, c_char], dim=-1)
         q_cat = torch.cat([q_word, q_char], dim=-1)
 
-        print("c cat size:", c_cat.size())
-        print("q cat size:", q_cat.size())
-        print("hidden size:", self.hidden_size)
+        # print("c cat size:", c_cat.size())
+        # print("q cat size:", q_cat.size())
+        # print("hidden size:", self.hidden_size)
 
         c = self.hwy(c_cat)
         q = self.hwy(q_cat)
