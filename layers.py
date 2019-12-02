@@ -7,6 +7,7 @@ Author:
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+import math
 
 from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
 from util import masked_softmax
@@ -242,3 +243,78 @@ class BiDAFOutput(nn.Module):
         log_p2 = masked_softmax(logits_2.squeeze(), mask, log_softmax=True)
 
         return log_p1, log_p2
+
+
+# Self-Attention - R-net ... by Forrest
+# Input is question-aware passage representation
+# Output is self-attention question-aware passage representation
+class SelfAttentionRNET(nn.Module):
+    def __init__(self, in_size, hidden_size, batch_size, dropout):
+        super(SelfAttentionRNET, self).__init__()
+        self.hidden_size = hidden_size
+        self.in_size = in_size
+        self.gru = nn.GRUCell(input_size=in_size, hidden_size=self.hidden_size)
+        self.Wp = nn.Linear(self.in_size, self.hidden_size, bias=False)
+        self.Wp_ = nn.Linear(self.in_size, self.hidden_size, bias=False)
+        self.out_size = self.in_size
+        self.dropout = nn.Dropout(p=dropout)
+        self.batch_size = batch_size
+
+    def forward(self, v):
+        (l, _, _) = v.size()
+        h = torch.randn(self.batch_size, self.hidden_size).to(device)
+        V = torch.randn(self.batch_size, self.hidden_size, 1).to(device)
+        hs = torch.zeros(l, self.batch_size, self.out_size).to(device)
+
+        for i in range(l):
+            Wpv = self.Wp(v[i])
+            Wpv_ = self.Wp_(v)
+            x = F.tanh(Wpv + Wpv_)
+            x = x.permute([1, 0, 2])
+            s = torch.bmm(x, V)
+            s = torch.squeeze(s, 2)
+            a = F.softmax(s, 1).unsqueeze(1)
+            c = torch.bmm(a, v.permute([1, 0, 2])).squeeze()
+            h = self.gru(c, h)
+            hs[i] = h
+            # logger.gpu_mem_log("SelfMatcher {:002d}".format(i), ['x', 'Wpv', 'Wpv_', 's', 'c', 'hs'],
+            #                    [x.data, Wpv.data, Wpv_.data, s.data, c.data, hs.data])
+            del Wpv, Wpv_, x, s, a, c
+        hs = self.dropout(hs)
+        del h, v
+        return hs
+
+# Self-Att in transformer  ... Forrest
+class SelfAttentionTrans(nn.module):
+    """ Self-Attention in Transformer.
+        Args:
+            h_dimension (int): Hidden size used in the BiDAF model.
+            H_dimension (int): dimension of Q, K, V matrix.
+    """
+    def __init__(self, batch_size, H_dimension, h_dimension):
+        super(SelfAttentionTrans, self).__init__()
+        self.batch_size = batch_size
+        self.H_dimension = H_dimension
+        self.h_dimension = h_dimension
+        # self.W_Q = nn.Parameter(torch.Tensor(h_dimension, H_dimension))
+        # self.W_K = nn.Parameter(torch.Tensor(h_dimension, H_dimension))
+        # self.W_V = nn.Parameter(torch.Tensor(h_dimension, H_dimension))
+
+    def _attn(self, q, k, v):
+        w = torch.matmul(q, k)
+        if self.scale:
+            w = w / math.sqrt(v.size(-1))
+        # w = w * self.b + -1e9 * (1 - self.b)  # TF implem method: mask_attn_weights
+        # XD: self.b may be larger than w, so we need to crop it
+        b = self.b[:, :, :w.size(-2), :w.size(-1)]
+        w = w * b + -1e9 * (1 - b)
+
+        w = nn.Softmax(dim=-1)(w)
+        w = self.attn_dropout(w)
+        return torch.matmul(w, v)
+
+
+
+    def forward(self, PQ_att):
+        W_Q = nn.Parameter
+        return Z
