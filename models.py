@@ -85,6 +85,11 @@ class BiDAF(nn.Module):
         c_char = self.char_emd(cc_idxs)
         q_char = self.char_emd(qc_idxs)
 
+        print("c word size: ", c_word.size())
+        print("c character size: ", c_char.size())
+        print("q word size: ", q_word.size())
+        print("q character size: ", q_char.size())
+
         c_cat = torch.cat([c_word, c_char], dim=-1)
         q_cat = torch.cat([q_word, q_char], dim=-1)
 
