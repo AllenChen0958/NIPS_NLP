@@ -41,7 +41,7 @@ class BiDAF(nn.Module):
                                      num_layers=1,
                                      drop_prob=drop_prob)
 
-        self.att = layers.BiDAFAttention(hidden_size=2 * hidden_size,
+        self.att = layers.BiDAFAttention(hidden_size=2 * hidden_size, drop_prob=drop_prob)
 
         self.norm = layers.Norm(d_model=8*hidden_size)
 
@@ -80,8 +80,6 @@ class BiDAF(nn.Module):
         x = self.norm(att)
 
         selfatt = self.self_att(x, x, x)
-
-        print("mhseladd size:", selfatt.size())
 
         mod = self.mod(selfatt, c_len)        # (batch_size, c_len, 2 * hidden_size)
 
