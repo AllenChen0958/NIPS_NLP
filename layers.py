@@ -281,7 +281,7 @@ class MultiHeadAttention(nn.Module):
         self.v_linear = nn.Linear(d_model, d_model)
         self.k_linear = nn.Linear(d_model, d_model)
 
-        self.dropout = nn.Dropout(dropout)
+        self.dropout = nn.Dropout(dropoutc .c
         self.out = nn.Linear(d_model, d_model)
 
     def forward(self, q, k, v, mask=None):
