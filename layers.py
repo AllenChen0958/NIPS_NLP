@@ -8,6 +8,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import math
+import numpy as np
 
 from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
 from util import masked_softmax
@@ -252,12 +253,41 @@ class Norm(nn.Module):
                / (x.std(dim=-1, keepdim=True) + self.eps) + self.bias
         return norm
 
+class ScaledDotProductAttention(nn.Module):
+    ''' Scaled Dot-Product Attention '''
+
+    def __init__(self, temperature, attn_dropout=0.1):
+        super().__init__()
+        self.temperature = temperature
+        self.dropout = nn.Dropout(attn_dropout)
+        self.softmax = nn.Softmax(dim=2)
+
+    def forward(self, q, k, v, mask=None):
+
+        attn = torch.bmm(q, k.transpose(1, 2))
+        attn = attn / self.temperature
+
+        if mask is not None:
+            attn = attn.masked_fill(mask, -np.inf)
+
+        attn = self.softmax(attn)
+        attn = self.dropout(attn)
+        output = torch.bmm(attn, v)
+
+        return output, attn
 
 def attention(q, k, v, d_k, mask=None, dropout=None):
     scores = torch.matmul(q, k.transpose(-2, -1)) / math.sqrt(d_k)
 
     if mask is not None:
-        mask = mask.unsqueeze(1)
+        mask = (mask.view(mask.shape[0], mask.shape[1], 1) * mask.view(mask.shape[0], 1, mask.shape[1]))
+        identity = torch.eye(mask.shape[1], mask.shape[1]).cuda().view(1, mask.shape[1], mask.shape[1])
+        mask = mask * (1 - identity.type(torch.cuda.ByteTensor)) 
+        mask = mask.unsqueeze(1).expand(mask.shape[0], 4, mask.shape[1], mask.shape[2])
+#         mask = mask.unsqueeze(1)
+#         mask = mask.view(mask.size()[0], 4, mask.size()
+#         print(mask.size(), scores.size())
+#         mask = torch.matmul(mask.transpose(-2,-1), mask)
         scores = scores.masked_fill(mask == 0, -1e9)
 
     scores = F.softmax(scores, dim=-1)
@@ -283,11 +313,7 @@ class MultiHeadAttention(nn.Module):
 
         self.dropout = nn.Dropout(dropout)
         self.out = nn.Linear(d_model, d_model)
-        
-        nn.init.xavier_uniform_(self.q_linear.weight)
-        nn.init.xavier_uniform_(self.v_linear.weight)
-        nn.init.xavier_uniform_(self.k_linear.weight)
-        
+
     def forward(self, q, k, v, mask=None):
         bs = q.size(0)
 
