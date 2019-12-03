@@ -40,10 +40,12 @@ def main(args):
     # Get embeddings
     log.info('Loading embeddings...')
     word_vectors = util.torch_from_json(args.word_emb_file)
+    char_vectors = util.torch_from_json(args.char_emb_file)
 
     # Get model
     log.info('Building model...')
     model = BiDAF(word_vectors=word_vectors,
+                  char_vectors=char_vectors,
                   hidden_size=args.hidden_size)
     model = nn.DataParallel(model, gpu_ids)
     log.info(f'Loading checkpoint from {args.load_path}...')
@@ -85,7 +87,8 @@ def main(args):
 
             # Get F1 and EM scores
             p1, p2 = log_p1.exp(), log_p2.exp()
-            starts, ends = util.discretize(p1, p2, args.max_ans_len, args.use_squad_v2)
+            starts, ends = util.discretize(
+                p1, p2, args.max_ans_len, args.use_squad_v2)
 
             # Log info
             progress_bar.update(batch_size)
@@ -126,11 +129,11 @@ def main(args):
         #                split=args.split,
         #                num_visuals=args.num_visuals)
         util.visualize_error(tbx,
-                       pred_dict=pred_dict,
-                       eval_path=eval_file,
-                       step=0,
-                       split=args.split,
-                       num_visuals=args.num_visuals)
+                             pred_dict=pred_dict,
+                             eval_path=eval_file,
+                             step=0,
+                             split=args.split,
+                             num_visuals=args.num_visuals)
 
     # Write submission file
     sub_path = join(args.save_dir, args.split + '_' + args.sub_file)
