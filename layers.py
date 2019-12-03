@@ -283,7 +283,11 @@ class MultiHeadAttention(nn.Module):
 
         self.dropout = nn.Dropout(dropout)
         self.out = nn.Linear(d_model, d_model)
-
+        
+        nn.init.xavier_uniform_(self.q_linear.weight)
+        nn.init.xavier_uniform_(self.v_linear.weight)
+        nn.init.xavier_uniform_(self.k_linear.weight)
+        
     def forward(self, q, k, v, mask=None):
         bs = q.size(0)
 
@@ -323,7 +327,7 @@ class MultiHeadAttention(nn.Module):
 
 ################################################################
 class SelfMatcher(nn.Module):
-    def __init__(self, in_size):
+    def __init__(self, in_size, dropout):
         super(SelfMatcher, self).__init__()
         self.hidden_size = in_size
         self.in_size = in_size
@@ -334,25 +338,5 @@ class SelfMatcher(nn.Module):
         self.dropout = nn.Dropout(p=dropout)
 
     def forward(self, v):
-        (l, _, _) = v.size()
-        h = torch.randn(l, self.hidden_size).to('cuda')
-        V = torch.randn(l, self.hidden_size, 1).to('cuda')
-        hs = torch.zeros(l, l, self.out_size).to('cuda')
-
-        for i in range(l):
-            Wpv = self.Wp(v[i])
-            Wpv_ = self.Wp_(v)
-            x = F.tanh(Wpv + Wpv_)
-            x = x.permute([1, 0, 2])
-            s = torch.bmm(x, V)
-            s = torch.squeeze(s, 2)
-            a = F.softmax(s, 1).unsqueeze(1)
-            c = torch.bmm(a, v.permute([1, 0, 2])).squeeze()
-            h = self.gru(c, h)
-            hs[i] = h
-            # logger.gpu_mem_log("SelfMatcher {:002d}".format(i), ['x', 'Wpv', 'Wpv_', 's', 'c', 'hs'],
-            #                    [x.data, Wpv.data, Wpv_.data, s.data, c.data, hs.data])
-            del Wpv, Wpv_, x, s, a, c
-        hs = self.dropout(hs)
-        del h, v
+        
         return hs
