@@ -8,6 +8,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import math
+import numpy as np
 
 from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
 from util import masked_softmax
@@ -252,12 +253,41 @@ class Norm(nn.Module):
                / (x.std(dim=-1, keepdim=True) + self.eps) + self.bias
         return norm
 
+class ScaledDotProductAttention(nn.Module):
+    ''' Scaled Dot-Product Attention '''
+
+    def __init__(self, temperature, attn_dropout=0.1):
+        super().__init__()
+        self.temperature = temperature
+        self.dropout = nn.Dropout(attn_dropout)
+        self.softmax = nn.Softmax(dim=2)
+
+    def forward(self, q, k, v, mask=None):
+
+        attn = torch.bmm(q, k.transpose(1, 2))
+        attn = attn / self.temperature
+
+        if mask is not None:
+            attn = attn.masked_fill(mask, -np.inf)
+
+        attn = self.softmax(attn)
+        attn = self.dropout(attn)
+        output = torch.bmm(attn, v)
+
+        return output, attn
 
 def attention(q, k, v, d_k, mask=None, dropout=None):
     scores = torch.matmul(q, k.transpose(-2, -1)) / math.sqrt(d_k)
 
     if mask is not None:
-        mask = mask.unsqueeze(1)
+        mask = (mask.view(mask.shape[0], mask.shape[1], 1) * mask.view(mask.shape[0], 1, mask.shape[1]))
+        identity = torch.eye(mask.shape[1], mask.shape[1]).cuda().view(1, mask.shape[1], mask.shape[1])
+        mask = mask * (1 - identity.type(torch.cuda.ByteTensor)) 
+        mask = mask.unsqueeze(1).expand(mask.shape[0], 4, mask.shape[1], mask.shape[2])
+#         mask = mask.unsqueeze(1)
+#         mask = mask.view(mask.size()[0], 4, mask.size()
+#         print(mask.size(), scores.size())
+#         mask = torch.matmul(mask.transpose(-2,-1), mask)
         scores = scores.masked_fill(mask == 0, -1e9)
 
     scores = F.softmax(scores, dim=-1)
@@ -334,25 +364,5 @@ class SelfMatcher(nn.Module):
         self.dropout = nn.Dropout(p=dropout)
 
     def forward(self, v):
-        (l, _, _) = v.size()
-        h = torch.randn(l, self.hidden_size).to('cuda')
-        V = torch.randn(l, self.hidden_size, 1).to('cuda')
-        hs = torch.zeros(l, l, self.out_size).to('cuda')
-
-        for i in range(l):
-            Wpv = self.Wp(v[i])
-            Wpv_ = self.Wp_(v)
-            x = F.tanh(Wpv + Wpv_)
-            x = x.permute([1, 0, 2])
-            s = torch.bmm(x, V)
-            s = torch.squeeze(s, 2)
-            a = F.softmax(s, 1).unsqueeze(1)
-            c = torch.bmm(a, v.permute([1, 0, 2])).squeeze()
-            h = self.gru(c, h)
-            hs[i] = h
-            # logger.gpu_mem_log("SelfMatcher {:002d}".format(i), ['x', 'Wpv', 'Wpv_', 's', 'c', 'hs'],
-            #                    [x.data, Wpv.data, Wpv_.data, s.data, c.data, hs.data])
-            del Wpv, Wpv_, x, s, a, c
-        hs = self.dropout(hs)
-        del h, v
+        
         return hs

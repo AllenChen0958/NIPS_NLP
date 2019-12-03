@@ -30,7 +30,7 @@ class BiDAF(nn.Module):
         drop_prob (float): Dropout probability.
     """
 
-    def __init__(self, word_vectors, hidden_size, drop_prob=0., heads = 8):
+    def __init__(self, word_vectors, hidden_size, drop_prob=0., heads = 4):
         super(BiDAF, self).__init__()
         self.emb = layers.Embedding(word_vectors=word_vectors,
                                     hidden_size=hidden_size,
@@ -49,7 +49,7 @@ class BiDAF(nn.Module):
                                                   d_model=8 * hidden_size,
                                                   dropout=drop_prob)
 
-        self.self_match = layers.SelfMatcher(in_size=8 * hidden_size)
+#         self.self_match = layers.SelfMatcher(in_size=8 * hidden_size, dropout=drop_prob)
 
         self.mod = layers.RNNEncoder(input_size=8 * hidden_size,
                                      hidden_size=hidden_size,
@@ -63,7 +63,8 @@ class BiDAF(nn.Module):
         c_mask = torch.zeros_like(cw_idxs) != cw_idxs       # Context
         q_mask = torch.zeros_like(qw_idxs) != qw_idxs       # Query
         c_len, q_len = c_mask.sum(-1), q_mask.sum(-1)
-
+        
+#         print(c_mask.size())
         # print("------------------")
         c_emb = self.emb(cw_idxs)         # (batch_size, c_len, hidden_size)
         q_emb = self.emb(qw_idxs)  # (batch_size, q_len, hidden_size)
@@ -81,16 +82,15 @@ class BiDAF(nn.Module):
                        c_mask, q_mask, )    # (batch_size, c_len, 8 * hidden_size)
         x = self.norm(att)
 
-        selfatt = self.self_att(x, x, x)
+        selfatt = self.self_att(x, x, x, c_mask)
+
+#         mod = self.mod(selfatt, c_len)        # (batch_size, c_len, 2 * hidden_size)
+
+        # self_match = self.self_match(att)
+#         att = att + selfatt
 
         mod = self.mod(selfatt, c_len)        # (batch_size, c_len, 2 * hidden_size)
 
-        # self_match = self.self_match(att)
-
-        att = torch.cat([att, selfatt], dim=2)
-
-        mod = self.mod(att, c_len)        # (batch_size, c_len, 2 * hidden_size)
-
-        out = self.out(att, mod, c_mask)  # 2 tensors, each (batch_size, c_len)
+        out = self.out(selfatt, mod, c_mask)  # 2 tensors, each (batch_size, c_len)
 
         return out
