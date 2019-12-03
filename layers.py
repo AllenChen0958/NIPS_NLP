@@ -323,7 +323,7 @@ class MultiHeadAttention(nn.Module):
 
 ################################################################
 class SelfMatcher(nn.Module):
-    def __init__(self, in_size):
+    def __init__(self, in_size, dropout):
         super(SelfMatcher, self).__init__()
         self.hidden_size = in_size
         self.in_size = in_size

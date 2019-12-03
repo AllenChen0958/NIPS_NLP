@@ -79,16 +79,18 @@ class BiDAF(nn.Module):
 
         att = self.att(c_enc, q_enc,
                        c_mask, q_mask, )    # (batch_size, c_len, 8 * hidden_size)
-        # x = self.norm(att)
+        x = self.norm(att)
 
-        # selfatt = self.self_att(x, x, x)
+        selfatt = self.self_att(x, x, x)
 
         mod = self.mod(selfatt, c_len)        # (batch_size, c_len, 2 * hidden_size)
 
-        self_match = self.self_match(att)
+        # self_match = self.self_match(att)
 
-        mod = self.mod(self_match, c_len)        # (batch_size, c_len, 2 * hidden_size)
+        att = torch.cat([att, selfatt], dim=2)
 
-        out = self.out(self_match, mod, c_mask)  # 2 tensors, each (batch_size, c_len)
+        mod = self.mod(att, c_len)        # (batch_size, c_len, 2 * hidden_size)
+
+        out = self.out(att, mod, c_mask)  # 2 tensors, each (batch_size, c_len)
 
         return out
