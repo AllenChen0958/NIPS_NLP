@@ -30,7 +30,7 @@ class BiDAF(nn.Module):
         drop_prob (float): Dropout probability.
     """
 
-    def __init__(self, word_vectors, char_vectors, hidden_size, drop_prob=0.):
+    def __init__(self, word_vectors, char_vectors, hidden_size, drop_prob=0., heads=8):
 
         super(BiDAF, self).__init__()
 
@@ -61,10 +61,16 @@ class BiDAF(nn.Module):
                                      num_layers=1,
                                      drop_prob=drop_prob)
 
-        self.att = layers.BiDAFAttention(hidden_size=2 * hidden_size,
-                                         drop_prob=drop_prob,
-                                         c_len,
-                                         ndf=100)
+        self.att = layers.BiDAFAttention(
+            hidden_size=2 * hidden_size, drop_prob=drop_prob)
+
+        self.norm = layers.Norm(d_model=8*hidden_size)
+
+        self.self_att = layers.MultiHeadAttention(heads=heads,
+                                                  d_model=8 * hidden_size,
+                                                  dropout=drop_prob)
+
+        # self.self_match = layers.SelfMatcher(in_size=8 * hidden_size, dropout=drop_prob)
 
         self.mod = layers.RNNEncoder(input_size=8 * hidden_size,
                                      hidden_size=hidden_size,
@@ -109,10 +115,20 @@ class BiDAF(nn.Module):
 
         att = self.att(c_enc, q_enc,
                        c_mask, q_mask, )    # (batch_size, c_len, 8 * hidden_size)
+        x = self.norm(att)
+
+        selfatt = self.self_att(x, x, x, c_mask)
+
+        # mod = self.mod(selfatt, c_len)
+        # (batch_size, c_len, 2 * hidden_size)
+
+        # self_match = self.self_match(att)
+        # att = att + selfatt
 
         # (batch_size, c_len, 2 * hidden_size)
-        mod = self.mod(att, c_len)
+        mod = self.mod(selfatt, c_len)
 
-        out = self.out(att, mod, c_mask)  # 2 tensors, each (batch_size, c_len)
+        # 2 tensors, each (batch_size, c_len)
+        out = self.out(selfatt, mod, c_mask)
 
-        return out, f
+        return out

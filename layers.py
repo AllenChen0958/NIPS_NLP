@@ -7,38 +7,12 @@ Author:
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+import math
+import numpy as np
 
 from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
 from util import masked_softmax
 
-
-# class C_Embedding(nn.Module):
-#     def __init__(self, char_vocab_size, char_dim, char_channel_width):
-#         super(C_Embedding, self).__init__()
-#         self.char_emb = nn.Embedding(char_vocab_size, char_dim, padding_idx=1)
-#         nn.init.uniform_(self.char_emb.weight, -0.001, 0.001)
-
-#         self.char_conv = nn.Conv2d(
-#             1, char_channel_size, (char_dim, char_channel_width))
-
-#     def forward(self, x):
-#         """
-#         :paramx: (batch, seq_len, word_len)
-#         :return: (batch, seq_len, char_channel_size)
-#         """
-#         batch_size = x.size(0)
-#         # (batch, seq_len, word_len, char_dim)
-#         x = self.dropout(self.char_emb(x))
-#         #(batch*seq_len, 1, char_dim, word_len)
-#         x = x.view(-1, self.char_dim, x.size(2)).unsqueeze(1)
-#         # (batch*seq_len, char_channel_size, 1, conv_len)->(batch*seq_len, char_channel_size, conv_len)
-#         x = self.char_conv(x).squeeze()
-#         # (batch * seq_len, char_channel_size, 1) -> (batch * seq_len, char_channel_size)
-#         x = F.max_pool1d(x, x.size(2)).squeeze()
-#         # (batch, seq_len, char_channel_size)
-#         x = x.view(batch_size, -1, self.char_channel_size)
-
-#         return x
 
 class CharEmbedding(nn.Module):
     def __init__(self, char_vectors, hidden_size, drop_prob=0.):
@@ -95,10 +69,9 @@ class Embedding(nn.Module):
 
     def forward(self, x):
         emb = self.embed(x)  # (batch_size, seq_len, embed_size)
-        print(emb.size())
         emb = F.dropout(emb, self.drop_prob, self.training)
         emb = self.proj(emb)  # (batch_size, seq_len, hidden_size)
-        emb = self.hwy(emb)   # (batch_size, seq_len, hidden_size)
+        emb = self.hwy(emb)  # (batch_size, seq_len, hidden_size)
 
         return emb
 
@@ -166,7 +139,7 @@ class RNNEncoder(nn.Module):
 
         # Sort by length and pack sequence for RNN
         lengths, sort_idx = lengths.sort(0, descending=True)
-        x = x[sort_idx]     # (batch_size, seq_len, input_size)
+        x = x[sort_idx]  # (batch_size, seq_len, input_size)
         x = pack_padded_sequence(x, lengths, batch_first=True)
 
         # Apply RNN
@@ -175,7 +148,7 @@ class RNNEncoder(nn.Module):
         # Unpack and reverse sort
         x, _ = pad_packed_sequence(x, batch_first=True, total_length=orig_len)
         _, unsort_idx = sort_idx.sort(0)
-        x = x[unsort_idx]   # (batch_size, seq_len, 2 * hidden_size)
+        x = x[unsort_idx]  # (batch_size, seq_len, 2 * hidden_size)
 
         # Apply dropout (RNN applies dropout after all but the last layer)
         x = F.dropout(x, self.drop_prob, self.training)
@@ -209,30 +182,14 @@ class BiDAFAttention(nn.Module):
             nn.init.xavier_uniform_(weight)
         self.bias = nn.Parameter(torch.zeros(1))
 
-        self.hidden_size = hidden_size
-        main = nn.Sequential(
-            # Z goes into a linear of size: ndf
-            nn.Linear((2 * 4 * hidden_size) ** 2, ndf),
-            nn.ReLU(True),
-            nn.Linear(ndf, ndf),
-            nn.ReLU(True),
-            nn.Linear(ndf, ndf),
-            nn.ReLU(True),
-            nn.Linear(ndf, 1),
-        )
-        self.main = main
-
     def forward(self, c, q, c_mask, q_mask):
         batch_size, c_len, _ = c.size()
         q_len = q.size(1)
-        # (batch_size, c_len, q_len)
-        s = self.get_similarity_matrix(c, q)
+        s = self.get_similarity_matrix(c, q)  # (batch_size, c_len, q_len)
         c_mask = c_mask.view(batch_size, c_len, 1)  # (batch_size, c_len, 1)
         q_mask = q_mask.view(batch_size, 1, q_len)  # (batch_size, 1, q_len)
-        # (batch_size, c_len, q_len)
-        s1 = masked_softmax(s, q_mask, dim=2)
-        # (batch_size, c_len, q_len)
-        s2 = masked_softmax(s, c_mask, dim=1)
+        s1 = masked_softmax(s, q_mask, dim=2)  # (batch_size, c_len, q_len)
+        s2 = masked_softmax(s, c_mask, dim=1)  # (batch_size, c_len, q_len)
 
         # (bs, c_len, q_len) x (bs, q_len, hid_size) => (bs, c_len, hid_size)
         # batch multiply
@@ -241,10 +198,7 @@ class BiDAFAttention(nn.Module):
         b = torch.bmm(torch.bmm(s1, s2.transpose(1, 2)), c)
 
         x = torch.cat([c, a, c * a, c * b], dim=2)  # (bs, c_len, 4 * hid_size)
-
-        f = self.gram_matrix(x)
-        f = self.main(f.view(batch_size, (2 * 4 * self.hidden_size)**2))
-        return x, f
+        return x
 
     def get_similarity_matrix(self, c, q):
         """Get the "similarity matrix" between context and query (using the
@@ -265,8 +219,8 @@ class BiDAFAttention(nn.Module):
 
         # Shapes: (batch_size, c_len, q_len)
         s0 = torch.matmul(c, self.c_weight).expand([-1, -1, q_len])
-        s1 = torch.matmul(q, self.q_weight).transpose(1, 2)\
-                                           .expand([-1, c_len, -1])
+        s1 = torch.matmul(q, self.q_weight).transpose(1, 2) \
+            .expand([-1, c_len, -1])
         s2 = torch.matmul(c * self.cq_weight, q.transpose(1, 2))
         s = s0 + s1 + s2 + self.bias
 
@@ -317,3 +271,142 @@ class BiDAFOutput(nn.Module):
         log_p2 = masked_softmax(logits_2.squeeze(), mask, log_softmax=True)
 
         return log_p1, log_p2
+
+############################################################################
+
+
+class Norm(nn.Module):
+    def __init__(self, d_model, eps=1e-6):
+        super().__init__()
+
+        self.size = d_model
+
+        # create two learnable parameters to calibrate normalisation
+        self.alpha = nn.Parameter(torch.ones(self.size))
+        self.bias = nn.Parameter(torch.zeros(self.size))
+
+        self.eps = eps
+
+    def forward(self, x):
+        norm = self.alpha * (x - x.mean(dim=-1, keepdim=True)) \
+            / (x.std(dim=-1, keepdim=True) + self.eps) + self.bias
+        return norm
+
+
+class ScaledDotProductAttention(nn.Module):
+    ''' Scaled Dot-Product Attention '''
+
+    def __init__(self, temperature, attn_dropout=0.1):
+        super().__init__()
+        self.temperature = temperature
+        self.dropout = nn.Dropout(attn_dropout)
+        self.softmax = nn.Softmax(dim=2)
+
+    def forward(self, q, k, v, mask=None):
+
+        attn = torch.bmm(q, k.transpose(1, 2))
+        attn = attn / self.temperature
+
+        if mask is not None:
+            attn = attn.masked_fill(mask, -np.inf)
+
+        attn = self.softmax(attn)
+        attn = self.dropout(attn)
+        output = torch.bmm(attn, v)
+
+        return output, attn
+
+
+def attention(q, k, v, d_k, mask=None, dropout=None):
+    scores = torch.matmul(q, k.transpose(-2, -1)) / math.sqrt(d_k)
+
+    if mask is not None:
+        mask = (mask.view(mask.shape[0], mask.shape[1], 1)
+                * mask.view(mask.shape[0], 1, mask.shape[1]))
+        identity = torch.eye(mask.shape[1], mask.shape[1]).cuda().view(
+            1, mask.shape[1], mask.shape[1])
+        mask = mask * (1 - identity.type(torch.cuda.ByteTensor))
+        mask = mask.unsqueeze(1).expand(
+            mask.shape[0], 4, mask.shape[1], mask.shape[2])
+#         mask = mask.unsqueeze(1)
+#         mask = mask.view(mask.size()[0], 4, mask.size()
+#         print(mask.size(), scores.size())
+#         mask = torch.matmul(mask.transpose(-2,-1), mask)
+        scores = scores.masked_fill(mask == 0, -1e9)
+
+    scores = F.softmax(scores, dim=-1)
+
+    if dropout is not None:
+        scores = dropout(scores)
+
+    output = torch.matmul(scores, v)
+    return output
+
+
+class MultiHeadAttention(nn.Module):
+    def __init__(self, heads, d_model, dropout=0.1):
+        super().__init__()
+
+        self.d_model = d_model
+        self.d_k = d_model // heads
+        self.h = heads
+
+        self.q_linear = nn.Linear(d_model, d_model)
+        self.v_linear = nn.Linear(d_model, d_model)
+        self.k_linear = nn.Linear(d_model, d_model)
+
+        self.dropout = nn.Dropout(dropout)
+        self.out = nn.Linear(d_model, d_model)
+
+    def forward(self, q, k, v, mask=None):
+        bs = q.size(0)
+
+        # perform linear operation and split into N heads
+        k = self.k_linear(k).view(bs, -1, self.h, self.d_k)
+        q = self.q_linear(q).view(bs, -1, self.h, self.d_k)
+        v = self.v_linear(v).view(bs, -1, self.h, self.d_k)
+
+        # transpose to get dimensions bs * N * sl * d_model
+        k = k.transpose(1, 2)
+        q = q.transpose(1, 2)
+        v = v.transpose(1, 2)
+
+        # calculate attention using function we will define next
+        scores = attention(q, k, v, self.d_k, mask, self.dropout)
+        # concatenate heads and put through final linear layer
+        concat = scores.transpose(1, 2).contiguous() \
+            .view(bs, -1, self.d_model)
+        output = self.out(concat)
+
+        return output
+
+
+# class FeedForward(nn.Module):
+#     def __init__(self, d_model, d_ff=2048, dropout=0.1):
+#         super().__init__()
+#
+#         # We set d_ff as a default to 2048
+#         self.linear_1 = nn.Linear(d_model, d_ff)
+#         self.dropout = nn.Dropout(dropout)
+#         self.linear_2 = nn.Linear(d_ff, d_model)
+#
+#     def forward(self, x):
+#         x = self.dropout(F.relu(self.linear_1(x)))
+#         x = self.linear_2(x)
+#         return x
+
+################################################################
+class SelfMatcher(nn.Module):
+    def __init__(self, in_size, dropout):
+        super(SelfMatcher, self).__init__()
+        self.hidden_size = in_size
+        self.in_size = in_size
+        self.gru = nn.GRUCell(input_size=in_size, hidden_size=self.hidden_size)
+        self.Wp = nn.Linear(self.in_size, self.hidden_size, bias=False)
+        self.Wp_ = nn.Linear(self.in_size, self.hidden_size, bias=False)
+        self.out_size = self.hidden_size
+        self.dropout = nn.Dropout(p=dropout)
+
+    def forward(self, v):
+
+        return hs
