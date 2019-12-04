@@ -15,6 +15,7 @@ import torch.utils.data as data
 import tqdm
 import numpy as np
 import ujson as json
+import math
 
 from collections import Counter
 
@@ -434,12 +435,61 @@ def visualize(tbx, pred_dict, eval_path, step, split, num_visuals):
                      text_string=tbl_fmt,
                      global_step=step)
 
-# Modified by Lizuoyan...
+
+# Find common substring:
+def find_lcseque(s1, s2):
+    # 生成字符串长度加1的0矩阵，m用来保存对应位置匹配的结果
+    # s1: answer, s2: prediction
+    m = [[0 for x in range(len(s2) + 1)] for y in range(len(s1) + 1)]
+    # d用来记录转移方向
+    d = [[None for x in range(len(s2) + 1)] for y in range(len(s1) + 1)]
+
+    for p1 in range(len(s1)):
+        for p2 in range(len(s2)):
+            if s1[p1] == s2[p2]:  # 字符匹配成功，则该位置的值为左上方的值加1
+                m[p1 + 1][p2 + 1] = m[p1][p2] + 1
+                d[p1 + 1][p2 + 1] = 'ok'
+            elif m[p1 + 1][p2] > m[p1][p2 + 1]:  # 左值大于上值，则该位置的值为左值，并标记回溯时的方向
+                m[p1 + 1][p2 + 1] = m[p1 + 1][p2]
+                d[p1 + 1][p2 + 1] = 'left'
+            else:  # 上值大于左值，则该位置的值为上值，并标记方向up
+                m[p1 + 1][p2 + 1] = m[p1][p2 + 1]
+                d[p1 + 1][p2 + 1] = 'up'
+    (p1, p2) = (len(s1), len(s2))
+    s = []
+    while m[p1][p2]:  # 不为None时
+        c = d[p1][p2]
+        if c == 'ok':  # 匹配成功，插入该字符，并向左上角找下一个
+            s.append(s1[p1 - 1])
+            p1 -= 1
+            p2 -= 1
+        if c == 'left':  # 根据标记，向左找下一个
+            p2 -= 1
+        if c == 'up':  # 根据标记，向上找下一个
+            p1 -= 1
+    s.reverse()
+    if len(s) != 0:
+        if len(s1) > len(s2):
+            # answer is longer than pred.
+            return 1
+        else:
+            # pred is longer than answer.
+            return 2
+    return 0
 
 
-def visualize_error(tbx, pred_dict, eval_path, step, split, num_visuals=100000000):
+# example = {"context_tokens": context_tokens,
+#                                "context_chars": context_chars,
+#                                "ques_tokens": ques_tokens,
+#                                "ques_chars": ques_chars,
+#                                "y1s": y1s,
+#                                "y2s": y2s,
+#                                "id": total}
+
+# Modified by Li Zuoyan
+def visualize_error(tbx, pred_dict, eval_path, step, split, num_visuals=100000000,
+                    vs_error_mode=0, Y1=None, Y2=None, P1=None, P2=None):
     """Visualize text examples to TensorBoard.
-
     Args:
         tbx (tensorboardX.SummaryWriter): Summary writer.
         pred_dict (dict): dict of predictions of the form id -> pred.
@@ -447,17 +497,28 @@ def visualize_error(tbx, pred_dict, eval_path, step, split, num_visuals=10000000
         step (int): Number of examples seen so far during training.
         split (str): Name of data split being visualized.
         num_visuals (int): Number of visuals to select at random from preds.
+
+        Created by Li zuoyan
+        vs_error_mod (int):
+        0 for all errors,
+        1 for index of all answers and predicts,
+        2 for the length of prediction is shorter than answer for first errors,
+        3 for the length of prediction is longer than answer for first errors.
     """
     if num_visuals <= 0:
         return
     if num_visuals > len(pred_dict):
         num_visuals = len(pred_dict)
-
-    visual_ids = np.random.choice(
-        list(pred_dict), size=num_visuals, replace=False)
-
+    visual_ids = np.random.choice(list(pred_dict), size=num_visuals, replace=False)
     with open(eval_path, 'r') as eval_file:
         eval_dict = json.load(eval_file)
+    cnt_error = .0
+    cnt_class_1_long = .0 # Pred longer
+    cnt_class_1_short = .0 # Pred shorter
+    cnt_class_2 = .0
+    error_class = 'None'
+    ratio = .0
+    K = 3
     for i, id_ in enumerate(visual_ids):
         pred = pred_dict[id_] or 'N/A'
         example = eval_dict[str(id_)]
@@ -465,16 +526,75 @@ def visualize_error(tbx, pred_dict, eval_path, step, split, num_visuals=10000000
         context = example['context']
         answers = example['answers']
 
+        y1s = Y1['tensor(%s)'%(str(id_))].numpy()
+        y2s = Y2['tensor(%s)'%(str(id_))].numpy()
+        p1 = P1[str(id_)]
+        p2 = P2[str(id_)]
+        
         gold = answers[0] if answers else 'N/A'
-        tbl_fmt = (f'- **Question:** {question}\n'
-                   + f'- **Context:** {context}\n'
-                   + f'- **Answer:** {gold}\n'
-                   + f'- **Prediction:** {pred}')
+        if int(vs_error_mode) == 0:
+            isAnswer = 0
+            for i, a_answer in enumerate(answers):
+                print(pred, a_answer)
+                isAnswer = compute_em(pred, a_answer)
+                if isAnswer == 1:
+                    break
+            if isAnswer == 0:
+                tbl_fmt = (f'- **Question:** {question}\n'
+                           + f'- **Context:** {context}\n'
+                           + f'- **Answer:** {answers}\n'
+                           + f'- **Prediction:** {pred}')
 
-        if answers != pred:
-            tbx.add_text(tag=f'{split}/{i + 1}_of_{num_visuals}',
-                         text_string=tbl_fmt,
-                         global_step=step)
+                tbx.add_text(tag=f'{split}/{i + 1}_of_{num_visuals}',
+                             text_string=tbl_fmt,
+                             global_step=step)
+                
+        elif vs_error_mode == 1:
+            isAnswer = 0
+            for i, a_answer in enumerate(answers):
+                isAnswer = compute_em(pred, a_answer)
+                if isAnswer == 1:
+                    break
+            if isAnswer == 0:
+                cnt_error += 1
+            if isAnswer == 0 and gold != pred and pred != 'N/A':
+                start_Ans = 0.0
+                end_Ans = 0.0
+                avg_start = 0.0
+                avg_end = 0.0
+                if gold != 'N/A':
+                    # i = 0
+                    # for ch in y1s:
+                    #     i += 1
+                    #     start_Ans += ch
+                    # for ch in y2s:
+                    #     end_Ans += ch
+
+                    # start_Ans = start_Ans / float(i)
+                    # end_Ans = end_Ans / float(i)
+                    start_Ans = np.mean(y1s)
+                    end_Ans = np.mean(y2s)
+                    avg_start = start_Ans - p1
+                    avg_end = end_Ans - p2
+                    if np.abs(avg_start-p1) < K and np.abs(avg_end-p2) < K:
+                        if len(max(answers)) < len(pred):
+                            cnt_class_1_long += 1
+                            error_class = 'Boundary: pred longer'
+                            ratio = cnt_class_1_long / cnt_error
+                        if len(max(answers)) > len(pred):
+                            cnt_class_1_short += 1
+                            error_class = 'Boundary: pred shorter'
+                            ratio = cnt_class_1_short / cnt_error
+                    tbl_fmt = (f'- **Question:** {question}\n'
+                            + f'- **Context:** {context}\n'
+                            + f'- **Answer:** {gold}\n'
+                            + f'- **Prediction:** {pred}\n'
+                            + f'- **(start_shift, end_shift):** {(avg_start, avg_end)}\n'
+                            + f'- **(start_Ans, end_Ans):** {(start_Ans, end_Ans)}\n'
+                            + f'- **(Error_class, Ratio, total):** {(error_class, ratio, cnt_error)}')
+                    tbx.add_text(tag=f'{split}/{i + 1}_of_{num_visuals}',
+                                text_string=tbl_fmt,
+                                global_step=step)
 
 
 def save_preds(preds, save_dir, file_name='predictions.csv'):
@@ -664,7 +784,9 @@ def discretize(p_start, p_end, max_len=15, no_answer=False):
     return start_idxs, end_idxs
 
 
-def convert_tokens(eval_dict, qa_id, y_start_list, y_end_list, no_answer):
+# def convert_tokens(eval_dict, qa_id, y_start_list, y_end_list, no_answer):
+# Modified to get indexs of predictions.  Li Zuoyan
+def convert_tokens(eval_dict, qa_id, y_start_list, y_end_list, no_answer, starts=None, ends=None):
     """Convert predictions to tokens from the context.
 
     Args:
@@ -679,6 +801,10 @@ def convert_tokens(eval_dict, qa_id, y_start_list, y_end_list, no_answer):
         pred_dict (dict): Dictionary index IDs -> predicted answer text.
         sub_dict (dict): Dictionary UUIDs -> predicted answer text (submission).
     """
+    if starts is None:
+        starts = {}
+    if ends is None:
+        ends = {}
     pred_dict = {}
     sub_dict = {}
     for qid, y_start, y_end in zip(qa_id, y_start_list, y_end_list):
@@ -688,13 +814,21 @@ def convert_tokens(eval_dict, qa_id, y_start_list, y_end_list, no_answer):
         if no_answer and (y_start == 0 or y_end == 0):
             pred_dict[str(qid)] = ''
             sub_dict[uuid] = ''
+            # Modified
+            starts[str(qid)] = -1
+            ends[str(qid)] = -1
+            # end modified
         else:
             if no_answer:
                 y_start, y_end = y_start - 1, y_end - 1
             start_idx = spans[y_start][0]
             end_idx = spans[y_end][1]
-            pred_dict[str(qid)] = context[start_idx: end_idx]
+            pred_dict[str(qid)] = context[start_idx: end_idx]  # get a string of pre within a dictionary. LZY
             sub_dict[uuid] = context[start_idx: end_idx]
+            # Modified
+            starts[str(qid)] = start_idx
+            ends[str(qid)] = end_idx
+            # end modified
     return pred_dict, sub_dict
 
 

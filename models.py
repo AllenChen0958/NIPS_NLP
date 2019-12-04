@@ -31,6 +31,7 @@ class BiDAF(nn.Module):
     """
 
     def __init__(self, word_vectors, char_vectors, hidden_size, drop_prob=0.):
+
         super(BiDAF, self).__init__()
 
         self.hidden_size = hidden_size
@@ -61,7 +62,9 @@ class BiDAF(nn.Module):
                                      drop_prob=drop_prob)
 
         self.att = layers.BiDAFAttention(hidden_size=2 * hidden_size,
-                                         drop_prob=drop_prob)
+                                         drop_prob=drop_prob,
+                                         c_len,
+                                         ndf=100)
 
         self.mod = layers.RNNEncoder(input_size=8 * hidden_size,
                                      hidden_size=hidden_size,
@@ -105,11 +108,11 @@ class BiDAF(nn.Module):
         q_enc = self.enc(q, q_len)
 
         att = self.att(c_enc, q_enc,
-                       c_mask, q_mask)    # (batch_size, c_len, 8 * hidden_size)
+                       c_mask, q_mask, )    # (batch_size, c_len, 8 * hidden_size)
 
         # (batch_size, c_len, 2 * hidden_size)
         mod = self.mod(att, c_len)
 
         out = self.out(att, mod, c_mask)  # 2 tensors, each (batch_size, c_len)
 
-        return out
+        return out, f

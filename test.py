@@ -67,6 +67,12 @@ def main(args):
     pred_dict = {}  # Predictions for TensorBoard
     sub_dict = {}   # Predictions for submission
     eval_file = vars(args)[f'{args.split}_eval_file']
+
+    # Store y1,y2,start,end... Li zuoyan
+    P1 = {}
+    P2 = {}
+    Y1 = {}
+    Y2 = {}
     with open(eval_file, 'r') as fh:
         gold_dict = json_load(fh)
     with torch.no_grad(), \
@@ -76,6 +82,19 @@ def main(args):
             cw_idxs = cw_idxs.to(device)
             qw_idxs = qw_idxs.to(device)
             batch_size = cw_idxs.size(0)
+
+            # Store y1, y2... Li Zuoyan
+            # Y1.append(y1)
+            # Y2.append(y2)
+            for uid in ids:
+                try:
+                    Y1[str(uid)] = y1
+                    Y2[str(uid)] = y2
+                    if y1.dim() > 1:
+                        raise ValueError
+                except ValueError:
+                    print("y1, y2 have multiple dims.")
+
 
             # Forward
             log_p1, log_p2 = model(cw_idxs, qw_idxs)
@@ -97,7 +116,9 @@ def main(args):
                                                       ids.tolist(),
                                                       starts.tolist(),
                                                       ends.tolist(),
-                                                      args.use_squad_v2)
+                                                      args.use_squad_v2,
+                                                      P1,
+                                                      P2) # Modified to get P1, P2. Li Zuoyan
             pred_dict.update(idx2pred)
             sub_dict.update(uuid2pred)
 
@@ -130,7 +151,7 @@ def main(args):
                        eval_path=eval_file,
                        step=0,
                        split=args.split,
-                       num_visuals=args.num_visuals)
+                       num_visuals=args.num_visuals,Y1=Y1,Y2=Y2,P1=P1,P2=P2,vs_error_mode=args.vs_error_mode)
 
     # Write submission file
     sub_path = join(args.save_dir, args.split + '_' + args.sub_file)

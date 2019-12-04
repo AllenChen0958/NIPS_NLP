@@ -165,6 +165,11 @@ def get_test_args():
                         type=str,
                         default='submission.csv',
                         help='Name for submission file.')
+    # Modified ot chose visualize error mode. Li Zuoyan
+    parser.add_argument('--vs_error_mode',
+                        type=int,
+                        default=0,
+                        help='Chose visualize error mode')
 
     # Require load_path for test.py
     args = parser.parse_args()
