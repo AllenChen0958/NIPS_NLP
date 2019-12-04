@@ -52,6 +52,7 @@ class CharEmbedding(nn.Module):
         emb = self.embed(x)
         # TODO: 降维
         emb = emb.view(emb.size(0), emb.size(1), -1)
+        emb = F.dropout(emb, self.drop_prob, self.training)
         emb = self.proj(emb)
 
         return emb
@@ -66,6 +67,7 @@ class WordEmbedding(nn.Module):
 
     def forward(self, x):
         emb = self.embed(x)
+        emb = F.dropout(emb, self.drop_prob, self.training)
         emb = self.proj(emb)
 
         return emb
