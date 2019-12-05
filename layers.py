@@ -284,12 +284,7 @@ def attention(q, k, v, d_k, mask=None, dropout=None):
         identity = torch.eye(mask.shape[1], mask.shape[1]).cuda().view(1, mask.shape[1], mask.shape[1])
         mask = mask * (1 - identity.type(torch.cuda.ByteTensor)) 
         mask = mask.unsqueeze(1).expand(mask.shape[0], 4, mask.shape[1], mask.shape[2])
-#         mask = mask.unsqueeze(1)
-#         mask = mask.view(mask.size()[0], 4, mask.size()
-#         print(mask.size(), scores.size())
-#         mask = torch.matmul(mask.transpose(-2,-1), mask)
         scores = scores.masked_fill(mask == 0, -1e9)
-
     scores = F.softmax(scores, dim=-1)
 
     if dropout is not None:
@@ -353,7 +348,7 @@ class MultiHeadAttention(nn.Module):
 
 ################################################################
 class SelfMatcher(nn.Module):
-    def __init__(self, in_size, dropout):
+    def __init__(self, in_size, dropout=None):
         super(SelfMatcher, self).__init__()
         self.hidden_size = in_size
         self.in_size = in_size
@@ -364,5 +359,30 @@ class SelfMatcher(nn.Module):
         self.dropout = nn.Dropout(p=dropout)
 
     def forward(self, v):
-        
+        # temp = tanh ( w*v + w_*v )
+        # s = temp * vT
+        # a = softmax(s)
+        # c = a * v
+        # h = gru(c, v)
+        (l, _, _) = v.size()
+        h = torch.randn(batch_size, self.hidden_size).to(device)
+        V = torch.randn(batch_size, self.hidden_size, 1).to(device)
+        hs = torch.zeros(l, batch_size, self.out_size).to(device)
+
+        for i in range(l):
+            Wpv = self.Wp(v[i])
+            Wpv_ = self.Wp_(v)
+            x = F.tanh(Wpv + Wpv_)
+            x = x.permute([1, 0, 2])
+            s = torch.bmm(x, V)
+            s = torch.squeeze(s, 2)
+            a = F.softmax(s, 1).unsqueeze(1)
+            c = torch.bmm(a, v.permute([1, 0, 2])).squeeze()
+            h = self.gru(c, h)
+            hs[i] = h
+            logger.gpu_mem_log("SelfMatcher {:002d}".format(i), ['x', 'Wpv', 'Wpv_', 's', 'c', 'hs'],
+                               [x.data, Wpv.data, Wpv_.data, s.data, c.data, hs.data])
+            del Wpv, Wpv_, x, s, a, c
+        hs = self.dropout(hs)
+        del h, v
         return hs
