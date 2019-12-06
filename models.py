@@ -128,25 +128,14 @@ class BiDAF(nn.Module):
         # mod = self.mod(selfatt, c_len)
         # (batch_size, c_len, 2 * hidden_size)
 
+        # self_match = self.self_match(att)
+        selfatt = self.feedforward(selfatt)
 
-<< << << < HEAD
-# self_match = self.self_match(att)
-# att = att + selfatt
+        att = att + selfatt
 
-# (batch_size, c_len, 2 * hidden_size)
-mod = self.mod(selfatt, c_len)
+        # (batch_size, c_len, 2 * hidden_size)
+        mod = self.mod(att, c_len)
 
-# 2 tensors, each (batch_size, c_len)
-out = self.out(selfatt, mod, c_mask)
-== == == =
-#         self_match = self.self_match(att)
-selfatt = self.feedforward(selfatt)
+        out = self.out(att, mod, c_mask)  # 2 tensors, each (batch_size, c_len)
 
-att = att + selfatt
-
-mod = self.mod(att, c_len)        # (batch_size, c_len, 2 * hidden_size)
-
-out = self.out(att, mod, c_mask)  # 2 tensors, each (batch_size, c_len)
->>>>>> > dev
-
-return out
+        return out
