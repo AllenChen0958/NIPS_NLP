@@ -359,18 +359,13 @@ class SelfMatcher(nn.Module):
         self.dropout = nn.Dropout(p=dropout)
 
     def forward(self, v):
-        # temp = tanh ( w*v + w_*v )
-        # s = temp * vT
-        # a = softmax(s)
-        # c = a * v
-        # h = gru(c, v)
-        (l, _, _) = v.size()
+        (batch_size, l, _) = v.size()
         h = torch.randn(batch_size, self.hidden_size).to(device)
-        V = torch.randn(batch_size, self.hidden_size, 1).to(device)
+        V = torch.randn(l, batch_size, self.hidden_size).to(device)
         hs = torch.zeros(l, batch_size, self.out_size).to(device)
 
         for i in range(l):
-            Wpv = self.Wp(v[i])
+            Wpv = self.Wp(v[:, i, :])
             Wpv_ = self.Wp_(v)
             x = F.tanh(Wpv + Wpv_)
             x = x.permute([1, 0, 2])
