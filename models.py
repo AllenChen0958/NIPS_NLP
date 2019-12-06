@@ -69,8 +69,14 @@ class BiDAF(nn.Module):
         self.self_att = layers.MultiHeadAttention(heads=heads,
                                                   d_model=8 * hidden_size,
                                                   dropout=drop_prob)
-
-        # self.self_match = layers.SelfMatcher(in_size=8 * hidden_size, dropout=drop_prob)
+        # self.self_att = nn.MultiheadAttention(8 * hidden_size, heads, dropout=dropout)
+        # self.feedforward = layers.FeedForward(d_model = 8 * hidden_size, d_ff=1024, dropout=drop_prob)
+        self.feedforward = layers.Boom(d_model=8 * hidden_size,
+                                       dim_feedforward=2048,
+                                       dropout=drop_prob,
+                                       shortcut=False)
+        self.self_match = layers.SelfMatcher(
+            in_size=8 * hidden_size, dropout=drop_prob)
 
         self.mod = layers.RNNEncoder(input_size=8 * hidden_size,
                                      hidden_size=hidden_size,
@@ -122,13 +128,25 @@ class BiDAF(nn.Module):
         # mod = self.mod(selfatt, c_len)
         # (batch_size, c_len, 2 * hidden_size)
 
-        # self_match = self.self_match(att)
-        # att = att + selfatt
 
-        # (batch_size, c_len, 2 * hidden_size)
-        mod = self.mod(selfatt, c_len)
+<< << << < HEAD
+# self_match = self.self_match(att)
+# att = att + selfatt
 
-        # 2 tensors, each (batch_size, c_len)
-        out = self.out(selfatt, mod, c_mask)
+# (batch_size, c_len, 2 * hidden_size)
+mod = self.mod(selfatt, c_len)
 
-        return out
+# 2 tensors, each (batch_size, c_len)
+out = self.out(selfatt, mod, c_mask)
+== == == =
+#         self_match = self.self_match(att)
+selfatt = self.feedforward(selfatt)
+
+att = att + selfatt
+
+mod = self.mod(att, c_len)        # (batch_size, c_len, 2 * hidden_size)
+
+out = self.out(att, mod, c_mask)  # 2 tensors, each (batch_size, c_len)
+>>>>>> > dev
+
+return out

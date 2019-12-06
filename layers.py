@@ -328,12 +328,7 @@ def attention(q, k, v, d_k, mask=None, dropout=None):
         mask = mask * (1 - identity.type(torch.cuda.ByteTensor))
         mask = mask.unsqueeze(1).expand(
             mask.shape[0], 4, mask.shape[1], mask.shape[2])
-#         mask = mask.unsqueeze(1)
-#         mask = mask.view(mask.size()[0], 4, mask.size()
-#         print(mask.size(), scores.size())
-#         mask = torch.matmul(mask.transpose(-2,-1), mask)
         scores = scores.masked_fill(mask == 0, -1e9)
-
     scores = F.softmax(scores, dim=-1)
 
     if dropout is not None:
@@ -355,7 +350,7 @@ class MultiHeadAttention(nn.Module):
         self.v_linear = nn.Linear(d_model, d_model)
         self.k_linear = nn.Linear(d_model, d_model)
 
-        self.dropout = nn.Dropout(dropout)
+        self.dropout = nn.Dropout(p=dropout)
         self.out = nn.Linear(d_model, d_model)
 
     def forward(self, q, k, v, mask=None):
@@ -381,23 +376,25 @@ class MultiHeadAttention(nn.Module):
         return output
 
 
-# class FeedForward(nn.Module):
-#     def __init__(self, d_model, d_ff=2048, dropout=0.1):
-#         super().__init__()
-#
-#         # We set d_ff as a default to 2048
-#         self.linear_1 = nn.Linear(d_model, d_ff)
-#         self.dropout = nn.Dropout(dropout)
-#         self.linear_2 = nn.Linear(d_ff, d_model)
-#
-#     def forward(self, x):
-#         x = self.dropout(F.relu(self.linear_1(x)))
-#         x = self.linear_2(x)
-#         return x
+class FeedForward(nn.Module):
+    def __init__(self, d_model, d_ff=2048, dropout=0.1):
+        super().__init__()
+
+        # We set d_ff as a default to 2048
+        self.linear_1 = nn.Linear(d_model, d_ff)
+        self.dropout = nn.Dropout(dropout)
+        self.linear_2 = nn.Linear(d_ff, d_model)
+
+    def forward(self, x):
+        x = self.dropout(F.relu(self.linear_1(x)))
+        x = self.linear_2(x)
+        return x
 
 ################################################################
+
+
 class SelfMatcher(nn.Module):
-    def __init__(self, in_size, dropout):
+    def __init__(self, in_size, dropout=None):
         super(SelfMatcher, self).__init__()
         self.hidden_size = in_size
         self.in_size = in_size
@@ -408,5 +405,76 @@ class SelfMatcher(nn.Module):
         self.dropout = nn.Dropout(p=dropout)
 
     def forward(self, v):
+        # temp = tanh ( w*v + w_*v )
+        # s = temp * vT
+        # a = softmax(s)
+        # c = a * v
+        # h = gru(c, v)
 
-        return hs
+        for i in range(l):
+            Wpv = self.Wp(v[:, i, :]).unsqueeze(1)
+            # print(Wpv.size())
+            Wpv_ = self.Wp_(v)
+            # print(Wpv_.size())
+            x = torch.tanh(Wpv + Wpv_)
+            # print('x:', x.size()) # [64, 255, 800]
+            # x = x.permute([1, 0, 2])
+            s = torch.bmm(x, V)
+            # print('s:', s.size())
+            s = torch.squeeze(s, 2)
+            a = F.softmax(s, 1).unsqueeze(1)
+            c = torch.bmm(a, v).squeeze()
+            h = self.gru(c, h)
+            hs[i] = h
+            # logger.gpu_mem_log("SelfMatcher {:002d}".format(i), ['x', 'Wpv', 'Wpv_', 's', 'c', 'hs'], [x.data, Wpv.data, Wpv_.data, s.data, c.data, hs.data])
+            # Wpv.detach(), Wpv_.detach(), x.detach(), s.detach(), a.detach(), c.detach()
+            del Wpv, Wpv_, x, s, a, c
+        hs = self.dropout(hs)
+        del h, v
+        # print(hs.permute(1,0,2).size())
+        return hs.permute(1, 0, 2)
+###############################################################
+
+
+class GELU(nn.Module):
+    """
+    Paper Section 3.4, last paragraph notice that BERT used the GELU instead of RELU
+    """
+
+    def forward(self, x):
+        # return torch.nn.functional.gelu(x.float())
+        # The first approximation has more operations than the second
+        # See https://arxiv.org/abs/1606.08415
+        # return 0.5 * x * (1 + torch.tanh(math.sqrt(2 / math.pi) * (x + 0.044715 * torch.pow(x, 3))))
+        return x * torch.sigmoid(1.702 * x)
+
+
+class Boom(nn.Module):
+
+    def __init__(self, d_model, dim_feedforward=2048, dropout=0.1, shortcut=False):
+        super(Boom, self).__init__()
+        self.linear1 = nn.Linear(d_model, dim_feedforward)
+        self.dropout = nn.Dropout(dropout) if dropout else None
+        if not shortcut:
+            self.linear2 = nn.Linear(dim_feedforward, d_model)
+        self.shortcut = shortcut
+        #self.act = nn.ReLU()
+        self.act = GELU()
+        #self.act = nn.Tanh()
+
+    def forward(self, input):
+        x = self.act(self.linear1(input))
+        if self.dropout:
+            x = self.dropout(x)
+        if self.shortcut:
+            # Trim the end off if the size is different
+            ninp = input.shape[-1]
+            x = torch.narrow(x, -1, 0, x.shape[-1] // ninp * ninp)
+            # Divide the hidden size evenly into chunks
+            x = x.view(*x.shape[:-1], x.shape[-1] // ninp, ninp)
+            # Collapse the chunks through summation
+            #h = h + self.drop(x).sum(dim=-2)
+            z = x.sum(dim=-2)
+        else:
+            z = self.linear2(x)
+        return z
