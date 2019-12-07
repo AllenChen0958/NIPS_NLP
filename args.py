@@ -247,3 +247,7 @@ def add_train_test_args(parser):
                         type=str,
                         default=None,
                         help='Path to load as a model checkpoint.')
+    parser.add_argument('--word-dim', default=100, type=int)
+    parser.add_argument('--char-dim', default=8, type=int)
+    parser.add_argument('--char-channel-width', default=5, type=int)
+    parser.add_argument('--char-channel-size', default=100, type=int)

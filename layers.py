@@ -14,6 +14,39 @@ from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
 from util import masked_softmax
 
 
+class CharEmbedding(nn.Module):
+    def __init__(self, char_vectors, hidden_size, drop_prob=0.):
+        super(CharEmbedding, self).__init__()
+        self.drop_prob = drop_prob
+        self.embed = nn.Embedding.from_pretrained(char_vectors)
+        self.proj = nn.Linear(char_vectors.size(
+            1)*16, hidden_size, bias=False)
+
+    def forward(self, x):
+        emb = self.embed(x)
+        # TODO: 降维
+        emb = emb.view(emb.size(0), emb.size(1), -1)
+        emb = F.dropout(emb, self.drop_prob, self.training)
+        emb = self.proj(emb)
+
+        return emb
+
+
+class WordEmbedding(nn.Module):
+    def __init__(self, word_vectors, hidden_size, drop_prob=0.):
+        super(WordEmbedding, self).__init__()
+        self.drop_prob = drop_prob
+        self.embed = nn.Embedding.from_pretrained(word_vectors)
+        self.proj = nn.Linear(word_vectors.size(1), hidden_size, bias=False)
+
+    def forward(self, x):
+        emb = self.embed(x)
+        emb = F.dropout(emb, self.drop_prob, self.training)
+        emb = self.proj(emb)
+
+        return emb
+
+
 class Embedding(nn.Module):
     """Embedding layer used by BiDAF, without the character-level component.
 
@@ -177,8 +210,10 @@ class BiDAFAttention(nn.Module):
             Equation 1 in https://arxiv.org/abs/1611.01603
         """
         c_len, q_len = c.size(1), q.size(1)
-        c = F.dropout(c, self.drop_prob, self.training)  # (bs, c_len, hid_size)
-        q = F.dropout(q, self.drop_prob, self.training)  # (bs, q_len, hid_size)
+        # (bs, c_len, hid_size)
+        c = F.dropout(c, self.drop_prob, self.training)
+        # (bs, q_len, hid_size)
+        q = F.dropout(q, self.drop_prob, self.training)
 
         # Shapes: (batch_size, c_len, q_len)
         s0 = torch.matmul(c, self.c_weight).expand([-1, -1, q_len])
@@ -236,6 +271,8 @@ class BiDAFOutput(nn.Module):
         return log_p1, log_p2
 
 ############################################################################
+
+
 class Norm(nn.Module):
     def __init__(self, d_model, eps=1e-6):
         super().__init__()
@@ -250,8 +287,9 @@ class Norm(nn.Module):
 
     def forward(self, x):
         norm = self.alpha * (x - x.mean(dim=-1, keepdim=True)) \
-               / (x.std(dim=-1, keepdim=True) + self.eps) + self.bias
+            / (x.std(dim=-1, keepdim=True) + self.eps) + self.bias
         return norm
+
 
 class ScaledDotProductAttention(nn.Module):
     ''' Scaled Dot-Product Attention '''
@@ -276,14 +314,18 @@ class ScaledDotProductAttention(nn.Module):
 
         return output, attn
 
+
 def attention(q, k, v, d_k, mask=None, dropout=None):
     scores = torch.matmul(q, k.transpose(-2, -1)) / math.sqrt(d_k)
 
     if mask is not None:
-        mask = (mask.view(mask.shape[0], mask.shape[1], 1) * mask.view(mask.shape[0], 1, mask.shape[1]))
-        identity = torch.eye(mask.shape[1], mask.shape[1]).cuda().view(1, mask.shape[1], mask.shape[1])
-        mask = mask * (1 - identity.type(torch.cuda.ByteTensor)) 
-        mask = mask.unsqueeze(1).expand(mask.shape[0], 4, mask.shape[1], mask.shape[2])
+        mask = (mask.view(mask.shape[0], mask.shape[1], 1)
+                * mask.view(mask.shape[0], 1, mask.shape[1]))
+        identity = torch.eye(mask.shape[1], mask.shape[1]).cuda().view(
+            1, mask.shape[1], mask.shape[1])
+        mask = mask * (1 - identity.type(torch.cuda.ByteTensor))
+        mask = mask.unsqueeze(1).expand(
+            mask.shape[0], 4, mask.shape[1], mask.shape[2])
         scores = scores.masked_fill(mask == 0, -1e9)
     scores = F.softmax(scores, dim=-1)
 
@@ -347,6 +389,8 @@ class FeedForward(nn.Module):
         return x
 
 ################################################################
+
+
 class SelfMatcher(nn.Module):
     def __init__(self, in_size, dropout=None):
         super(SelfMatcher, self).__init__()
@@ -371,38 +415,42 @@ class SelfMatcher(nn.Module):
         # h = gru(c, v)
 
         for i in range(l):
-            Wpv = self.Wp(v[:,i,:]).unsqueeze(1)
-#             print(Wpv.size())
+            Wpv = self.Wp(v[:, i, :]).unsqueeze(1)
+            # print(Wpv.size())
             Wpv_ = self.Wp_(v)
-#             print(Wpv_.size()) 
+            # print(Wpv_.size())
             x = torch.tanh(Wpv + Wpv_)
-#             print('x:', x.size()) # [64, 255, 800]
-#             x = x.permute([1, 0, 2])
+            # print('x:', x.size()) # [64, 255, 800]
+            # x = x.permute([1, 0, 2])
             s = torch.bmm(x, V)
-#             print('s:', s.size())
+            # print('s:', s.size())
             s = torch.squeeze(s, 2)
             a = F.softmax(s, 1).unsqueeze(1)
             c = torch.bmm(a, v).squeeze()
             h = self.gru(c, h)
             hs[i] = h
-#             logger.gpu_mem_log("SelfMatcher {:002d}".format(i), ['x', 'Wpv', 'Wpv_', 's', 'c', 'hs'], [x.data, Wpv.data, Wpv_.data, s.data, c.data, hs.data])
-#             Wpv.detach(), Wpv_.detach(), x.detach(), s.detach(), a.detach(), c.detach()
+            # logger.gpu_mem_log("SelfMatcher {:002d}".format(i), ['x', 'Wpv', 'Wpv_', 's', 'c', 'hs'], [x.data, Wpv.data, Wpv_.data, s.data, c.data, hs.data])
+            # Wpv.detach(), Wpv_.detach(), x.detach(), s.detach(), a.detach(), c.detach()
             del Wpv, Wpv_, x, s, a, c
         hs = self.dropout(hs)
         del h, v
-#         print(hs.permute(1,0,2).size())
-        return hs.permute(1,0,2)
+        # print(hs.permute(1,0,2).size())
+        return hs.permute(1, 0, 2)
 ###############################################################
+
+
 class GELU(nn.Module):
     """
     Paper Section 3.4, last paragraph notice that BERT used the GELU instead of RELU
     """
+
     def forward(self, x):
-        #return torch.nn.functional.gelu(x.float())
+        # return torch.nn.functional.gelu(x.float())
         # The first approximation has more operations than the second
         # See https://arxiv.org/abs/1606.08415
-        #return 0.5 * x * (1 + torch.tanh(math.sqrt(2 / math.pi) * (x + 0.044715 * torch.pow(x, 3))))
+        # return 0.5 * x * (1 + torch.tanh(math.sqrt(2 / math.pi) * (x + 0.044715 * torch.pow(x, 3))))
         return x * torch.sigmoid(1.702 * x)
+
 
 class Boom(nn.Module):
 
@@ -419,7 +467,8 @@ class Boom(nn.Module):
 
     def forward(self, input):
         x = self.act(self.linear1(input))
-        if self.dropout: x = self.dropout(x)
+        if self.dropout:
+            x = self.dropout(x)
         if self.shortcut:
             # Trim the end off if the size is different
             ninp = input.shape[-1]

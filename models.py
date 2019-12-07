@@ -31,18 +31,39 @@ class BiDAF(nn.Module):
         drop_prob (float): Dropout probability.
     """
 
-    def __init__(self, word_vectors, hidden_size, drop_prob=0., heads = 4):
-        super(BiDAF, self).__init__()
-        self.emb = layers.Embedding(word_vectors=word_vectors,
-                                    hidden_size=hidden_size,
-                                    drop_prob=drop_prob)
+    def __init__(self, word_vectors, char_vectors, hidden_size, drop_prob=0., heads=8):
 
-        self.enc = layers.RNNEncoder(input_size=hidden_size,
+        super(BiDAF, self).__init__()
+
+        self.hidden_size = hidden_size
+
+        self.word_emb = layers.WordEmbedding(word_vectors, hidden_size)
+        self.char_emb = layers.CharEmbedding(char_vectors, hidden_size)
+
+        # assert hidden_size * 2 == (char_channel_size + word_dim)
+
+        # highway network
+        self.hwy = layers.HighwayEncoder(2, hidden_size*2)
+
+        # highway network
+        # for i in range(2):
+        #     setattr(self, f'highway_linear{i}', nn.Sequential(
+        #         nn.Linear(hidden_size * 2, hidden_size * 2), nn.ReLU()))
+
+        #     setattr(self, f'hightway_gate{i}', nn.Sequential(
+        #         nn.Linear(hidden_size * 2, hidden_size * 2), nn.Sigmoid()))
+
+        # self.emb = layers.Embedding(word_vectors=word_vectors,
+        #                             hidden_size=hidden_size,
+        #                             drop_prob=drop_prob)
+
+        self.enc = layers.RNNEncoder(input_size=hidden_size*2,
                                      hidden_size=hidden_size,
                                      num_layers=1,
                                      drop_prob=drop_prob)
 
-        self.att = layers.BiDAFAttention(hidden_size=2 * hidden_size, drop_prob=drop_prob)
+        self.att = layers.BiDAFAttention(
+            hidden_size=2 * hidden_size, drop_prob=drop_prob)
 
         self.norm = layers.Norm(d_model=8*hidden_size)
         ######
@@ -52,13 +73,14 @@ class BiDAF(nn.Module):
         self.self_att = layers.MultiHeadAttention(heads=heads,
                                                   d_model=8 * hidden_size,
                                                   dropout=drop_prob)
-#         self.self_att = nn.MultiheadAttention(8 * hidden_size, heads, dropout=dropout)
-#         self.feedforward = layers.FeedForward(d_model = 8 * hidden_size, d_ff=1024, dropout=drop_prob)
-        self.feedforward = layers.Boom(d_model=8 * hidden_size, 
-                                       dim_feedforward=2048, 
-                                       dropout=drop_prob, 
+        # self.self_att = nn.MultiheadAttention(8 * hidden_size, heads, dropout=dropout)
+        # self.feedforward = layers.FeedForward(d_model = 8 * hidden_size, d_ff=1024, dropout=drop_prob)
+        self.feedforward = layers.Boom(d_model=8 * hidden_size,
+                                       dim_feedforward=2048,
+                                       dropout=drop_prob,
                                        shortcut=False)
-        self.self_match = layers.SelfMatcher(in_size=8 * hidden_size, dropout=drop_prob)
+        # self.self_match = layers.SelfMatcher(
+        #     in_size=8 * hidden_size, dropout=drop_prob)
 
         self.mod = layers.RNNEncoder(input_size=8 * hidden_size,
                                      hidden_size=hidden_size,
@@ -68,52 +90,65 @@ class BiDAF(nn.Module):
         self.out = layers.BiDAFOutput(hidden_size=hidden_size,
                                       drop_prob=drop_prob)
 
-    def forward(self, cw_idxs, qw_idxs):
+    def forward(self, cw_idxs, cc_idxs, qw_idxs, qc_idxs):
         c_mask = torch.zeros_like(cw_idxs) != cw_idxs       # Context
         q_mask = torch.zeros_like(qw_idxs) != qw_idxs       # Query
         c_len, q_len = c_mask.sum(-1), q_mask.sum(-1)
-        
-#         print(c_mask.size())
-        # print("------------------")
-        c_emb = self.emb(cw_idxs)         # (batch_size, c_len, hidden_size)
-        q_emb = self.emb(qw_idxs)  # (batch_size, q_len, hidden_size)
-        # print("c_emb Size：", c_emb.size())
-        # print("q_emb Size：", q_emb.size())
+
+        # (batch_size, c_len, hidden_size)
+        # (batch_size, q_len, hidden_size)
+        c_word = self.word_emb(cw_idxs)
+        q_word = self.word_emb(qw_idxs)
+
+        c_char = self.char_emb(cc_idxs)
+        q_char = self.char_emb(qc_idxs)
+
+        # print("c word size: ", c_word.size())
+        # print("q word size: ", q_word.size())
+        # print("c character size: ", c_char.size())
+        # print("q character size: ", q_char.size())
+
+        c_cat = torch.cat([c_word, c_char], dim=-1)
+        q_cat = torch.cat([q_word, q_char], dim=-1)
+
+        # print("c cat size:", c_cat.size())
+        # print("q cat size:", q_cat.size())
+        # print("hidden size:", self.hidden_size)
+
+        c = self.hwy(c_cat)
+        q = self.hwy(q_cat)
 
         # (batch_size, c_len, 2 * hidden_size)
-        c_enc = self.enc(c_emb, c_len)
-        q_enc = self.enc(q_emb, q_len)  # (batch_size, q_len, 2 * hidden_size)
-
-        # print("c_enc Size：", c_enc.size())
-        # print("q_enc Size：", q_enc.size())
+        c_enc = self.enc(c, c_len)
+        # (batch_size, q_len, 2 * hidden_size)
+        q_enc = self.enc(q, q_len)
 
         att = self.att(c_enc, q_enc,
                        c_mask, q_mask, )    # (batch_size, c_len, 8 * hidden_size)
-#         x = self.norm(att)
-        
+        # x = self.norm(att)
+
         ####
         q = att
         k = self.norm(att)
         v = self.norm(att)
-        selfatt = self.self_att(q,k,v,c_mask)
+        selfatt = self.self_att(q, k, v, c_mask)
         selfatt = k + selfatt
         boom = self.feedforward(selfatt)
         selfatt = boom + selfatt
         mod = self.mod(selfatt, c_len)
         out = self.out(selfatt, mod, c_mask)
         ####
-#         selfatt = self.self_att(x, x, x, c_mask)
+        # selfatt = self.self_att(x, x, x, c_mask)
 
-# #         mod = self.mod(selfatt, c_len)        # (batch_size, c_len, 2 * hidden_size)
+        # mod = self.mod(selfatt, c_len)        # (batch_size, c_len, 2 * hidden_size)
 
-# #         self_match = self.self_match(att)
-#         selfatt = self.feedforward(selfatt)
-    
-#         att = att + selfatt
-    
+        # self_match = self.self_match(att)
+        # selfatt = self.feedforward(selfatt)
 
-#         mod = self.mod(att, c_len)        # (batch_size, c_len, 2 * hidden_size)
+        # att = att + selfatt
 
-#         out = self.out(att, mod, c_mask)  # 2 tensors, each (batch_size, c_len)
+        # mod = self.mod(att, c_len)        # (batch_size, c_len, 2 * hidden_size)
+
+        # out = self.out(att, mod, c_mask)  # 2 tensors, each (batch_size, c_len)
 
         return out
