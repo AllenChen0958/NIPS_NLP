@@ -7,6 +7,7 @@ Author:
 import layers
 import torch
 import torch.nn as nn
+# from apex.normalization.fused_layer_norm import FusedLayerNorm as LayerNorm
 
 
 class BiDAF(nn.Module):
@@ -44,6 +45,9 @@ class BiDAF(nn.Module):
         self.att = layers.BiDAFAttention(hidden_size=2 * hidden_size, drop_prob=drop_prob)
 
         self.norm = layers.Norm(d_model=8*hidden_size)
+        ######
+#         self.LN = LayerNorm(8*hidden_size, eps=1e-12)
+        ######
 
         self.self_att = layers.MultiHeadAttention(heads=heads,
                                                   d_model=8 * hidden_size,
@@ -85,20 +89,31 @@ class BiDAF(nn.Module):
 
         att = self.att(c_enc, q_enc,
                        c_mask, q_mask, )    # (batch_size, c_len, 8 * hidden_size)
-        x = self.norm(att)
+#         x = self.norm(att)
+        
+        ####
+        q = att
+        k = self.norm(att)
+        v = self.norm(att)
+        selfatt = self.self_att(q,k,v,c_mask)
+        selfatt = k + selfatt
+        boom = self.feedforward(selfatt)
+        selfatt = boom + selfatt
+        mod = self.mod(selfatt, c_len)
+        out = self.out(selfatt, mod, c_mask)
+        ####
+#         selfatt = self.self_att(x, x, x, c_mask)
 
-        selfatt = self.self_att(x, x, x, c_mask)
+# #         mod = self.mod(selfatt, c_len)        # (batch_size, c_len, 2 * hidden_size)
 
-#         mod = self.mod(selfatt, c_len)        # (batch_size, c_len, 2 * hidden_size)
-
-#         self_match = self.self_match(att)
-        selfatt = self.feedforward(selfatt)
+# #         self_match = self.self_match(att)
+#         selfatt = self.feedforward(selfatt)
     
-        att = att + selfatt
+#         att = att + selfatt
     
 
-        mod = self.mod(att, c_len)        # (batch_size, c_len, 2 * hidden_size)
+#         mod = self.mod(att, c_len)        # (batch_size, c_len, 2 * hidden_size)
 
-        out = self.out(att, mod, c_mask)  # 2 tensors, each (batch_size, c_len)
+#         out = self.out(att, mod, c_mask)  # 2 tensors, each (batch_size, c_len)
 
         return out
