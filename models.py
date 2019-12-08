@@ -135,6 +135,7 @@ class BiDAF(nn.Module):
         v = self.norm2(att)
         selfatt = self.self_att(q, k, v, c_mask)
         selfatt = k + selfatt
+#         selfatt = torch.cat([k, selfatt], dim=0)
         selfatt = self.norm3(selfatt)
         boom = self.feedforward(selfatt)
         selfatt = boom + selfatt
