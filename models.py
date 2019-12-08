@@ -31,7 +31,7 @@ class BiDAF(nn.Module):
         drop_prob (float): Dropout probability.
     """
 
-    def __init__(self, word_vectors, char_vectors, hidden_size, drop_prob=0., heads=8):
+    def __init__(self, word_vectors, char_vectors, hidden_size, drop_prob=0., heads=1):
 
         super(BiDAF, self).__init__()
 

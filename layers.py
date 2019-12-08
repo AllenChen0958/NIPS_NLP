@@ -325,7 +325,7 @@ def attention(q, k, v, d_k, mask=None, dropout=None):
             1, mask.shape[1], mask.shape[1])
         mask = mask * (1 - identity.type(torch.cuda.ByteTensor))
         mask = mask.unsqueeze(1).expand(
-            mask.shape[0], 4, mask.shape[1], mask.shape[2])
+            mask.shape[0], 1, mask.shape[1], mask.shape[2])
         scores = scores.masked_fill(mask == 0, -1e9)
     scores = F.softmax(scores, dim=-1)
 
