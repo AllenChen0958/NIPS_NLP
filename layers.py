@@ -409,6 +409,11 @@ class SelfMatcher(nn.Module):
         # c = a * v
         # h = gru(c, v)
 
+        (batch_size, l, _) = v.size()
+        h = torch.randn(batch_size, self.hidden_size).to(device)
+        V = torch.randn(l, batch_size, self.hidden_size).to(device)
+        hs = torch.zeros(l, batch_size, self.out_size).to(device)
+
         for i in range(l):
             Wpv = self.Wp(v[:, i, :]).unsqueeze(1)
             # print(Wpv.size())
