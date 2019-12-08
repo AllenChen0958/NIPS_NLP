@@ -65,7 +65,8 @@ class BiDAF(nn.Module):
         self.att = layers.BiDAFAttention(
             hidden_size=2 * hidden_size, drop_prob=drop_prob)
 
-        self.norm = layers.Norm(d_model=8*hidden_size)
+        self.norm1 = layers.Norm(d_model=8*hidden_size)
+        self.norm2 = layers.Norm(d_model=8*hidden_size)
         ######
 #         self.LN = LayerNorm(8*hidden_size, eps=1e-12)
         ######
@@ -75,6 +76,7 @@ class BiDAF(nn.Module):
                                                   dropout=drop_prob)
         # self.self_att = nn.MultiheadAttention(8 * hidden_size, heads, dropout=dropout)
         # self.feedforward = layers.FeedForward(d_model = 8 * hidden_size, d_ff=1024, dropout=drop_prob)
+        self.norm3 = layers.Norm(d_model=8*hidden_size)
         self.feedforward = layers.Boom(d_model=8 * hidden_size,
                                        dim_feedforward=2048,
                                        dropout=drop_prob,
@@ -129,10 +131,11 @@ class BiDAF(nn.Module):
 
         ####
         q = att
-        k = self.norm(att)
-        v = self.norm(att)
+        k = self.norm1(att)
+        v = self.norm2(att)
         selfatt = self.self_att(q, k, v, c_mask)
         selfatt = k + selfatt
+        selfatt = self.norm3(selfatt)
         boom = self.feedforward(selfatt)
         selfatt = boom + selfatt
         mod = self.mod(selfatt, c_len)
