@@ -143,7 +143,7 @@ class BiDAF(nn.Module):
         # (batch_size, c_len, 2 * hidden_size)
         mod = self.mod(selfatt, c_len)
 
-        self_match = self.self_match(att)
+        # self_match = self.self_match(att)
         selfatt = self.feedforward(selfatt)
 
         att = att + selfatt
